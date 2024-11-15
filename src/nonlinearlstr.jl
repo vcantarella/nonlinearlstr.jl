@@ -3,7 +3,7 @@ module nonlinearlstr
     using LinearAlgebra
     using Prima
 
-    function BoundedTrustRegion(func::function, grad::function, x0::Array, lb::Array, ub:Array, initial_radius=1,
+    function BoundedTrustRegion(func::Function, grad::Function, x0::Array, lb::Array, ub:Array, initial_radius=1,
         max_radius=100, epsilon=1e-6, epsilon_hat = 1e-10, eta = 1e-8, eta_1 = 0.5, eta_2 = 0.9,
         err = 1e-8, gamma_1 = 0.5, gamma_2 = 1.5, Beta = 0.999, max_iter = 100)
         # Check if x0 is within bounds
@@ -98,6 +98,13 @@ module nonlinearlstr
         end
         println("Maximum number of iterations reached")
         return x, f, g, max_iter
+    end
+
+    function nonlinear_leastsquares(residuals::Function, x0::Array, lb::Array, ub::Array,
+        xtol=1e-6, ftol=1e-6, gtol=1e-6, max_iter=100)
+        f(x) = 0.5 * sum(residuals(x).^2)
+        g(x) = ForwardDiff.gradient(f, x)
+        BoundedTrustRegion(f, g, x0, lb, ub, epsilon, epsilon_hat, eta, eta_1, eta_2, err, gamma_1, gamma_2, Beta, max_iter)
     end
 
 end

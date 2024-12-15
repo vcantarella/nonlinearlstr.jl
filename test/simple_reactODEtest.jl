@@ -66,7 +66,7 @@ ub = [10.0, 10.0, 10.0, 10.0]
 x0 = [rand() * (ub[i] - lb[i]) + lb[i] for i in 1:4]
 
 # Run the optimization
-include("../src/nonlinear_lstr.jl")
+include("../src/nonlinearlstr.jl")
 opt = nonlinearlstr.bounded_trust_region(cost, grad_cost, hess,x0, lb, ub,
         initial_radius = 1e-5)
 x = opt[1]
@@ -74,7 +74,7 @@ cost(x)
 
 function resi(x)
     problem = ODEProblem(lotka_volterra!, u0, tspan, x)
-    sol = solve(problem, Tsit5(); saveat = tsteps)
+    sol = solve(problem, Rosenbrock23(); saveat = tsteps)
     u = sol.u
     u1 = [ux[1] for ux in u]
     u2 = [ux[2] for ux in u]
@@ -86,14 +86,25 @@ function jac(x)
     return ForwardDiff.jacobian(resi, x)
 end
 
-nls = nonlinearlstr.nlss_bounded_trust_region(resi, jac, x0, lb, ub)
+nls = nonlinearlstr.nlss_bounded_trust_region(resi, jac, x0, lb, ub,
+        initial_radius = 1e-9)
 
-
+x_nls = nls[1]
+cost(x_nls)
 cost(x0)
 using PRIMA
 res = PRIMA.bobyqa(cost, x0, xl=lb, xu=ub)
 x_p = res[1]
 cost(x_p)
+
+using NonlinearSolve
+res_2(x, p) = resi(x)
+nlls_prob = NonlinearProblem(res_2, x0)
+nlls_sol = solve(nlls_prob, TrustRegion(initial_trust_radius = 1e-9);
+     maxiters = 1000, show_trace = Val(true),
+trace_level = TraceWithJacobianConditionNumber(25))
+p_nl = nlls_sol.u
+cost(p_nl)
 # Setup the ODE problem, then solve
 prob = ODEProblem(lotka_volterra!, u0, tspan, x)
 sol = solve(prob, Tsit5())

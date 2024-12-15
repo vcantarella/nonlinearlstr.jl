@@ -106,7 +106,7 @@ module nonlinearlstr
     end
 
 
-    function nlss_bounded_trust_region(res::Function, grad::Function, x0::Array{T}, lb::Array{T}, ub::Array{T}; initial_radius=1,
+    function nlss_bounded_trust_region(res::Function, jac::Function, x0::Array{T}, lb::Array{T}, ub::Array{T}; initial_radius=1,
         max_radius=100, epsilon=1e-9, epsilon_hat = 1e-10, eta = 1e-8, eta_1 = 0.5, eta_2 = 0.9,
         errs = 1e-12, gamma_1 = 0.5, gamma_2 = 1.5, Beta = 0.999, max_iter = 100) where T
         # Check if x0 is within bounds
@@ -115,9 +115,8 @@ module nonlinearlstr
         end
 
         f0 = res(x0)
-        J0 = grad(x0)
+        J0 = jac(x0)
 
-        Bk = zeros(eltype(x0), length(x0), length(x0))
 
         #Step 1 termination test:
         if (norm(J0) < epsilon) || (initial_radius < epsilon_hat)
@@ -144,20 +143,23 @@ module nonlinearlstr
             ## The problem we approximate by the scaling matrix D and a distance d that we want to solve
             ## Step 2.1 Calculate the scaling vectors and the scaling matrix
             update_vectors_ak_bk!(ak, bk, x, lb, ub)
-            update_Dk!(Dk, ak, bk, J, radius, errs)
 
-            f_(d) = sqrt(sum((f+ J*d).^2))
-            g_(d) = ForwardDiff.gradient(f_, d)
-            f_dhat(d_hat) = (Dk*g_(d_hat))'*d_hat
-            ## Step 2.2: Solve the trust region subproblem in the scaled space: d_hat = inv(D)*d
-            f_dhat(d_hat) = (Dk*g)'*d_hat + 0.5*d_hat'*(Dk*Bk*Dk)*d_hat
+            g = J' * f
+
+            update_Dk!(Dk, ak, bk, g, radius, errs)
+            # substep. formulate the subproblem
             inv_D = inv(Dk)
+
+            q(s) = 0.5 * norm(f + J * s)
+
+            f_(d) = 1/2 * norm(f + J * Dk * d)
+
             dhatl = inv_D * (lb - x)
             dhatu = inv_D * (ub - x)
             dhat0 = inv_D * -g ./ norm(g)
             dhat0 = dhat0 * radius
             rhobeg = max(norm(dhat0- dhatl), norm(dhatu - dhat0), radius)
-            d_hat, info = bobyqa(f_dhat, dhat0, rhobeg = radius, xl = dhatl, xu = dhatu)
+            d_hat, info = bobyqa(f_, dhat0, rhobeg = radius, xl = dhatl, xu = dhatu)
             
             if !issuccess(info)
                 println("BOBYQA failed to converge")
@@ -172,10 +174,10 @@ module nonlinearlstr
                 return x+sk, f, g, iter
             end
 
-            fk = sqrt(sum(f))
-            fksk = sqrt(sum(res(x+sk)))
-            Predk = fk - f_(sk)
-            Areak = fk - fksks
+            fk = norm(f)
+            fksk = norm(res(x+sk))
+            Predk = q(zeros(eltype(sk),size(sk)))-q(sk)
+            Areak = fk - fksk
 
             if Predk < epsilon_hat
                 println("0 gradient convergence criterion reached")
@@ -186,8 +188,9 @@ module nonlinearlstr
 
             if rho >= eta
                 x = x + sk
-                f = fksk
-                J = grad(x)
+                f = res(x)
+                J = jac(x)
+                println("f: size: $(size(f)), J: size: $(size(J))")
                 println("Iteration: $iter, f: $f, norm(g): $(norm(g))")
                 println("--------------------------------------------")
             #Step 4: Update the trust region radius

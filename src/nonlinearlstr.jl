@@ -1,5 +1,6 @@
 module nonlinearlstr
     include("Affinescale.jl")
+    include("trsbox.jl")
     using LinearAlgebra
     using PRIMA
     using Roots
@@ -48,14 +49,17 @@ module nonlinearlstr
             dhatu = inv_D * (ub - x)
             dhat0 = inv_D * -g ./ norm(g)
             dhat0 = dhat0 * radius
-            rhobeg = max(norm(dhat0- dhatl), norm(dhatu - dhat0), radius)
-            d_hat, info = bobyqa(f_dhat, dhat0, rhobeg = radius, xl = dhatl, xu = dhatu)
-            
-            if !issuccess(info)
-                println("BOBYQA failed to converge")
-                println(info)
-                error("BOBYQA failed to converge")
-            end
+            # rhobeg = max(norm(dhat0- dhatl), norm(dhatu - dhat0), radius)
+            # d_hat, info = bobyqa(f_dhat, dhat0, rhobeg = radius, xl = dhatl, xu = dhatu)
+            A = Dk*Bk*Dk
+            b = Dk*g
+            d_hat = trsbox(A, b, radius, dhatl, dhatu, 1e-9, 100)
+
+            # if !issuccess(info)
+            #     println("BOBYQA failed to converge")
+            #     println(info)
+            #     error("BOBYQA failed to converge")
+            # end
             # the update trial solution:
             sk = Beta .* Dk * d_hat
 

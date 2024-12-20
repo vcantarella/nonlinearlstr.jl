@@ -1,3 +1,8 @@
+"""
+Affine scaling methods according to Wang and Yuan (2013)
+"""
+
+
 
 function update_vectors_ak_bk!(ak, bk, x, lb, ub)
     ak .= x .- lb

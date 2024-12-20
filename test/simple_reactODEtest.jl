@@ -57,7 +57,7 @@ end
 
 cost(p)
 grad_cost(p)
-hess(p) = ForwardDiff.jacobian(grad_cost, p)
+hess(p) = grad_cost(p)' * grad_cost(p)
 
 # Define the bounds
 lb = [0.0, 0.0, 0.0, 0.0]

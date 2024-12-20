@@ -2,6 +2,7 @@ module nonlinearlstr
     include("Affinescale.jl")
     using LinearAlgebra
     using PRIMA
+    using Roots
 
     function bounded_trust_region(func::Function, grad::Function, hess::Function, x0::Array{T}, lb::Array{T}, ub::Array{T}; initial_radius=1,
         max_radius=100, epsilon=1e-9, epsilon_hat = 1e-10, eta = 1e-8, eta_1 = 0.5, eta_2 = 0.9,
@@ -144,28 +145,49 @@ module nonlinearlstr
             ## Step 2.1 Calculate the scaling vectors and the scaling matrix
             update_vectors_ak_bk!(ak, bk, x, lb, ub)
 
-            g = J' * f
+            g = 2 * J' * f
 
             update_Dk!(Dk, ak, bk, g, radius, errs)
             # substep. formulate the subproblem
             inv_D = inv(Dk)
 
-            q(s) = 0.5 * norm(f + J * s)
-
-            f_(d) = 1/2 * norm(f + J * Dk * d)
+            q(s) = f'f + 2f'J*s + s'J'J*s
+            J_hat = J * Dk
+            f_(d_hat) = f'f + 2f'J_hat*d_hat + d_hat'J_hat'J_hat*d_hat
 
             dhatl = inv_D * (lb - x)
             dhatu = inv_D * (ub - x)
             dhat0 = inv_D * -g ./ norm(g)
             dhat0 = dhat0 * radius
-            rhobeg = max(norm(dhat0- dhatl), norm(dhatu - dhat0), radius)
-            d_hat, info = bobyqa(f_, dhat0, rhobeg = radius, xl = dhatl, xu = dhatu)
+            rhobeg = min(norm(dhat0- dhatl), norm(dhatu - dhat0), radius)
+            # d_hat, info = bobyqa(f_, dhat0, rhobeg = radius, xl = dhatl, xu = dhatu)
             
-            if !issuccess(info)
-                println("BOBYQA failed to converge")
-                println(info)
-                error("BOBYQA failed to converge")
+            newton_step = (2J_hat'J_hat)\(-2J_hat'f)
+            if norm(newton_step) < radius
+                d_hat = newton_step
+            else
+                steep_descent = (2J_hat'*f)'*(2J_hat'*f)/((2J_hat'f)'*(2J_hat'J_hat)*(2J_hat'*f))*(2J_hat'*f)
+                dogleg(τ) = if τ <= 1
+                    steep_descent * τ
+                else
+                    steep_descent + (newton_step - steep_descent)*(τ - 1)
+                end
+                dogleg_a = newton_step'newton_step -
+                 2*newton_step'steep_descent +
+                 steep_descent'steep_descent
+                dogleg_b = 2*newton_step'steep_descent -
+                 2*steep_descent'steep_descent
+                dogleg_c = steep_descent'steep_descent-
+                radius^2
+                f_root(τ) = dogleg_a*(τ-1)^2 + dogleg_b*(τ-1) + dogleg_c
+                τ = find_zero(f_root, 1)
+                d_hat = dogleg(τ)
             end
+            # if !issuccess(info)
+            #     println("BOBYQA failed to converge")
+            #     println(info)
+            #     error("BOBYQA failed to converge")
+            # end
             # the update trial solution:
             sk = Beta .* Dk * d_hat
 
@@ -174,8 +196,9 @@ module nonlinearlstr
                 return x+sk, f, g, iter
             end
 
-            fk = norm(f)
-            fksk = norm(res(x+sk))
+            fk = f'f
+            fksk = res(x+sk)'*res(x+sk)
+            # fksk = norm(res(x+sk))
             Predk = q(zeros(eltype(sk),size(sk)))-q(sk)
             Areak = fk - fksk
 

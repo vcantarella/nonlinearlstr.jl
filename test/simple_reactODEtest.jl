@@ -2,7 +2,6 @@ using DifferentialEquations
 using SciMLSensitivity
 using ForwardDiff
 using LinearAlgebra
-
 function lotka_volterra!(du, u, p, t)
     x, y = u
     α, β, δ, γ = p
@@ -65,7 +64,7 @@ lb = [0.0, 0.0, 0.0, 0.0]
 ub = [10.0, 10.0, 10.0, 10.0]
 # sample from an uniform distribution within the bounds
 x0 = [rand() * (ub[i] - lb[i]) + lb[i] for i in 1:4]
-
+cost(x0)
 # Run the optimization
 include("../src/nonlinearlstr.jl")
 opt = nonlinearlstr.bounded_trust_region(cost, grad_cost, hess,x0, lb, ub,
@@ -79,7 +78,7 @@ function resi(x)
     u = sol.u
     u1 = [ux[1] for ux in u]
     u2 = [ux[2] for ux in u]
-    [u_noisy1 .- u1; u_noisy2 .- u2]
+    [(u_noisy1 .- u1)./σ1.^2; (u_noisy2 .- u2)./σ2.^2]
     
 end
 
@@ -88,7 +87,7 @@ function jac(x)
 end
 
 nls = nonlinearlstr.nlss_bounded_trust_region(resi, jac, x0, lb, ub,
-        initial_radius = 1e-9)
+        initial_radius = 1)
 
 x_nls = nls[1]
 cost(x_nls)
@@ -100,13 +99,13 @@ cost(x_p)
 using NonlinearSolve
 res_2(x, p) = resi(x)
 nlls_prob = NonlinearProblem(res_2, x0)
-nlls_sol = solve(nlls_prob, TrustRegion(initial_trust_radius = 1e-9);
+nlls_sol = solve(nlls_prob, TrustRegion(initial_trust_radius = 1e-6);
      maxiters = 1000, show_trace = Val(true),
-trace_level = TraceWithJacobianConditionNumber(25))
+trace_level = NonlinearSolve.TraceWithJacobianConditionNumber(25))
 p_nl = nlls_sol.u
 cost(p_nl)
 # Setup the ODE problem, then solve
-prob = ODEProblem(lotka_volterra!, u0, tspan, x)
+prob = ODEProblem(lotka_volterra!, u0, tspan, x_p)
 sol = solve(prob, Tsit5())
 plot(sol; linewidth = 3, color = [:red :blue])
 scatter!(tsteps, u_noisy1, yerror = σ1, label = "x noisy", color = :red)
@@ -121,7 +120,7 @@ x_py = pyconvert(Vector, pyls.x)
 cost(x_py)
 cost(x0)
 # Setup the ODE problem, then solve
-prob = ODEProblem(lotka_volterra!, u0, tspan, x_p)
+prob = ODEProblem(lotka_volterra!, u0, tspan, x_py)
 sol = solve(prob, Tsit5())
 plot(sol; linewidth = 3, color = [:red :blue])
 scatter!(tsteps, u_noisy1, yerror = σ1, label = "x noisy", color = :red)
@@ -263,10 +262,8 @@ end
 plt2
 
 # Bar plot for the success rate
-bar(["nonlinearlstr", "nlss", "PRIMA", "NonlinearSolve", "scipy"], sum(clean_successes, dims = 1)[1,:], label = "success", legend = :topleft)
 boxplot(["nonlinearlstr", "nlss", "PRIMA", "NonlinearSolve", "scipy"], costs', label = "cost", legend = :topleft)
 boxplot(["nonlinearlstr", "nlss", "PRIMA", "NonlinearSolve", "scipy"], distance, label = "distance", legend = :topleft)
 
 # bar plot for the success rate
 bar(["nonlinearlstr", "nlss", "PRIMA", "NonlinearSolve", "scipy"], sum(successes, dims = 1)', label = "success", legend = :topleft)
-boxplot(["nonlinearlstr", "nlss", "PRIMA", "NonlinearSolve", "scipy"], success, label = "success", legend = :topleft)

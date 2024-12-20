@@ -189,7 +189,19 @@ module nonlinearlstr
             #     error("BOBYQA failed to converge")
             # end
             # the update trial solution:
-            sk = Beta .* Dk * d_hat
+            sk = Dk * d_hat
+
+            # Coleman and Li method for adjusting the step size:
+
+            for i in eachindex(x)
+                if x[i] + sk[i] < lb[i] || x[i] + sk[i] > ub[i]
+                    sk[i] *= -1
+                end
+            end
+            if any(x + sk .< lb) || any(x + sk .> ub)
+                radius = maximum([radius, gamma_2 * norm(inv_D*sk)])
+                continue
+            end
 
             if norm(sk) < epsilon_hat
                 println("Step size convergence criterion reached")

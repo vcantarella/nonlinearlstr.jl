@@ -52,8 +52,8 @@ module nonlinearlstr
             # rhobeg = max(norm(dhat0- dhatl), norm(dhatu - dhat0), radius)
             # d_hat, info = bobyqa(f_dhat, dhat0, rhobeg = radius, xl = dhatl, xu = dhatu)
             A = Dk*Bk*Dk
-            b = Dk*g
-            d_hat = trsbox(A, b, radius, dhatl, dhatu, 1e-9, 100)
+            b = Dk'*g
+            d_hat = trsbox(A, b, radius, dhatl, dhatu, 1e-9, 1000)
 
             # if !issuccess(info)
             #     println("BOBYQA failed to converge")

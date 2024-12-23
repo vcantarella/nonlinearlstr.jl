@@ -1,5 +1,6 @@
 using LinearAlgebra
 include("../src/cg.jl")
+include("../src/trsbox.jl")
 using Test
 
 A = [3 0 1; 0 4 2; 1 2 3]

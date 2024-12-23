@@ -44,11 +44,9 @@ function trsbox(H::AbstractMatrix, grad::AbstractVector, Δ::Real, lb::AbstractV
     s = [] # inactive set
     k = 0 #iteration counter
     f(x) = 0.5 * x' * H * x + grad' * x
+    touch_bound = false
     for i in 1:max_iter
         # initiating updates
-        λ_Δ = Inf
-        λ_lb = Inf
-        λ_ub = Inf
         # Step 2: Determine the active set:
         for j in eachindex(d)
             if (abs(d[j] - lb[j])< tol) & (g[j] >= 0)
@@ -59,44 +57,37 @@ function trsbox(H::AbstractMatrix, grad::AbstractVector, Δ::Real, lb::AbstractV
         end
         # Step 3: Solve the trust region subproblem
         λ_cg = - (g' * u) / (u' * H * u) #step size
+        Pᵢ!(u, s) # make sure only active set is updated
         update = λ_cg * u
-        Pᵢ!(update, s) # make sure only active set is updated
         # Step 4. Correct solution if it is bigger than the trust region
         #    or if it is outside the bounds 
         if norm(d + update) > Δ
             λ_Δ = solve_lambdadelta(u, d, Δ)
             update = λ_Δ * u
-            Pᵢ!(update, s) # only update the function at the active set:
+            return d + update
         end
         if any(d+update .< lb)
             λ_lb = maximum((lb-d) ./ u)
             update = λ_lb * u
-            Pᵢ!(update, s) # only update the function at the active set:
+            touch_bound = true
         end
         if any(d+update .> ub)
             λ_ub = minimum((ub-d) ./ u)
             update = λ_ub * u
-            Pᵢ!(update, s) # only update the function at the active set:
+            touch_bound = true
         end
-        # TODO: Is these next steps necessary? update again?
-        # Choose the minimum as the step size
-        λꜝ = minimum([λ_cg, λ_Δ, λ_lb, λ_ub])
-        update = λꜝ * u
-        Pᵢ!(update, s) # only update the function at the active set:
-
         # Preparing for the next iteration
-        if norm(update) * Δ <= 0.01*(f(d)-f(d+update))
-            d = d + update #update x
-            println("Converged in iteration $k")
-            return d
-        end
-        if norm(update) < tol
+        if touch_bound & (norm(update) * Δ <= 0.01*(f(d)-f(d+update)))
             d = d + update #update x
             println("Converged in iteration $k")
             return d
         end
         d = d + update #update x
         g = H*d + grad #update gradient
+        if norm(g) < tol
+            println("Converged in iteration $k")
+            return d
+        end
         β = (g' * H * u) / (u' * H * u) #update search direction
         u = -g + β * u #the search direction is a linear combination of the steepest decent and the previous search direction
         k = k + 1

@@ -68,7 +68,7 @@ cost(x0)
 # Run the optimization
 include("../src/nonlinearlstr.jl")
 opt = nonlinearlstr.bounded_trust_region(cost, grad_cost, hess,x0, lb, ub,
-        initial_radius = 1e-5)
+        initial_radius = 10, max_radius  = 10000, max_iter = 100000)
 x = opt[1]
 cost(x)
 
@@ -105,7 +105,7 @@ trace_level = NonlinearSolve.TraceWithJacobianConditionNumber(25))
 p_nl = nlls_sol.u
 cost(p_nl)
 # Setup the ODE problem, then solve
-prob = ODEProblem(lotka_volterra!, u0, tspan, x_p)
+prob = ODEProblem(lotka_volterra!, u0, tspan, p_nl)
 sol = solve(prob, Tsit5())
 plot(sol; linewidth = 3, color = [:red :blue])
 scatter!(tsteps, u_noisy1, yerror = σ1, label = "x noisy", color = :red)
@@ -120,7 +120,7 @@ x_py = pyconvert(Vector, pyls.x)
 cost(x_py)
 cost(x0)
 # Setup the ODE problem, then solve
-prob = ODEProblem(lotka_volterra!, u0, tspan, x_py)
+prob = ODEProblem(lotka_volterra!, u0, tspan, x)
 sol = solve(prob, Tsit5())
 plot(sol; linewidth = 3, color = [:red :blue])
 scatter!(tsteps, u_noisy1, yerror = σ1, label = "x noisy", color = :red)
@@ -250,6 +250,9 @@ clean_distance = [distance[findall(.!isnan.(distance[:,i])),i] for i in 1:5]
 xlabels = ["nonlinearlstr", "nlss", "PRIMA", "NonlinearSolve", "scipy"]
 plt = Plots.plot()
 for (i,cost) in enumerate(clean_costs)
+    if i == 2
+        continue
+    end
     boxplot!(plt, [xlabels[i]], cost, label = xlabels[i], legend = :topleft, outliers = false)
 end
 plt
@@ -257,6 +260,9 @@ boxplot!(plt, ["nonlinearlstr", "nlss", "PRIMA", "NonlinearSolve", "scipy"], cle
 
 plt2 = Plots.plot()
 for (i,dist) in enumerate(clean_distance)
+    if i == 2
+        continue
+    end
     boxplot!(plt2, [xlabels[i]], dist, label = xlabels[i], legend = :topleft, outliers = false)
 end
 plt2

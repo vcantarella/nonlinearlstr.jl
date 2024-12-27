@@ -1,5 +1,5 @@
-==> 2024-12-27 09:18:03 <==
-# cmd: C:\Users\vitor\.julia\artifacts\cba433181fa6470b206db49415f1b7593a9d25ff\bin\micromamba.exe -r C:\Users\vitor\.julia\scratchspaces\0b3b1443-0f03-428d-bdfb-f27f9c1191ea\root create -y -p C:\Users\vitor\Documents\nonlinearlstr\.CondaPkg\env --override-channels --no-channel-priority openssl[version='>=3, <3.1'] python[version='>=3.8,<4',channel='conda-forge',build='*cpython*'] scipy[version='*'] -c conda-forge
+==> 2024-12-27 16:21:00 <==
+# cmd: C:\Users\vitor\.julia\artifacts\cba433181fa6470b206db49415f1b7593a9d25ff\bin\micromamba.exe -r C:\Users\vitor\.julia\scratchspaces\0b3b1443-0f03-428d-bdfb-f27f9c1191ea\root create -y -p c:\Users\vitor\Documents\nonlinearlstr\.CondaPkg\env --override-channels --no-channel-priority openssl[version='>=3, <3.1'] python[version='>=3.8,<4',channel='conda-forge',build='*cpython*'] scipy[version='*'] -c conda-forge
 # conda version: 3.8.0
 +https://conda.anaconda.org/conda-forge/win-64::python_abi-3.11-5_cp311
 +https://conda.anaconda.org/conda-forge/win-64::ucrt-10.0.22621.0-h57928b3_1

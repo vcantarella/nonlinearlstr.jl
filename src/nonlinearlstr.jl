@@ -5,21 +5,41 @@ module nonlinearlstr
     using PRIMA
     using Roots
 
-    function bounded_trust_region(func::Function, grad::Function, hess::Function, x0::Array{T}, lb::Array{T}, ub::Array{T}; initial_radius=1,
-        max_radius=100, epsilon=1e-9, epsilon_hat = 1e-10, eta = 1e-8, eta_1 = 0.5, eta_2 = 0.9,
-        errs = 1e-12, gamma_1 = 0.5, gamma_2 = 1.5, Beta = 0.999, max_iter = 100) where T
+    function bounded_trust_region(
+        func::Function, grad::Function,
+        hess::Function, x0::Array{T},
+        lb::Array{T}, ub::Array{T};
+        max_trust_radius = nothing,
+        min_trust_radius = 1e-12,
+        initial_radius = 1.0,
+        step_threshold = 0.0001,
+        shrink_threshold = 0.25,
+        expand_threshold = 0.75,
+        shrink_factor = 0.25,
+        expand_factor = 2.0,
+        Beta = 0.99999,
+        max_iter = 100,
+        gtol = 1e-8,
+        ) where T
         # Check if x0 is within bounds
         if any(x0 .< lb) || any(x0 .> ub)
             error("Initial guess x0 is not within bounds")
         end
-
+    
         f0 = func(x0)
+        if max_trust_radius == nothing
+            max_radius = max(norm(f0), maximum(x0) - minimum(x0))
+        else
+            max_radius = max_trust_radius
+        end
+        
+
         g0 = grad(x0)
 
         Bk = hess(x0)
 
         #Step 1 termination test:
-        if (norm(g0) < epsilon) || (initial_radius < epsilon_hat)
+        if (norm(g0) < gtol) || (initial_radius < min_trust_radius)
             println("Initial guess is already a minimum gradientwise")
             return x0, f0, g0, 0
         end
@@ -28,6 +48,8 @@ module nonlinearlstr
         ak = zeros(eltype(x0), length(x0))
         bk = zeros(eltype(x0), length(x0))
         Dk = Diagonal(ones(eltype(x0), length(x0)))
+        inv_Dk = copy(Dk)
+        affine_cache = (ak = ak, bk = bk, Dk = Dk, inv_Dk = inv_Dk)
 
         # initializing the x and g vectors
         x = x0
@@ -39,46 +61,36 @@ module nonlinearlstr
             #Step 2: Determine trial step
             ## The problem we approximate by the scaling matrix D and a distance d that we want to solve
             ## Step 2.1 Calculate the scaling vectors and the scaling matrix
-            update_vectors_ak_bk!(ak, bk, x, lb, ub)
-            update_Dk!(Dk, ak, bk, g, radius, errs)
-
+            update_Dk!(affine_cache, x, lb, ub, g, radius, 1e-16)
+            Dk = affine_cache.Dk
+            inv_Dk = affine_cache.inv_Dk
             ## Step 2.2: Solve the trust region subproblem in the scaled space: d_hat = inv(D)*d
-            f_dhat(d_hat) = (Dk*g)'*d_hat + 0.5*d_hat'*(Dk*Bk*Dk)*d_hat
-            inv_D = inv(Dk)
-            dhatl = inv_D * (lb - x)
-            dhatu = inv_D * (ub - x)
-            dhat0 = inv_D * -g ./ norm(g)
-            dhat0 = dhat0 * radius
-            # rhobeg = max(norm(dhat0- dhatl), norm(dhatu - dhat0), radius)
-            # d_hat, info = bobyqa(f_dhat, dhat0, rhobeg = radius, xl = dhatl, xu = dhatu)
+            # f_dhat(d_hat) = (Dk*g)'*d_hat + 0.5*d_hat'*(Dk*Bk*Dk)*d_hat
+            dhatl = inv_Dk * (lb - x)
+            dhatu = inv_Dk * (ub - x)
             A = Dk*Bk*Dk
-            b = Dk'*g
-            d_hat = trsbox(A, b, radius, dhatl, dhatu, 1e-9, 1000)
-
-            # if !issuccess(info)
-            #     println("BOBYQA failed to converge")
-            #     println(info)
-            #     error("BOBYQA failed to converge")
-            # end
-            # the update trial solution:
+            b = Dk*g
+            d_hat = trsbox(A, b, radius, dhatl, dhatu, gtol, 1000)
             sk = Beta .* Dk * d_hat
 
-            if norm(sk) < epsilon_hat
+            if norm(sk) < gtol
                 println("Step size convergence criterion reached")
                 return x+sk, f, g, iter
             end
 
-            Predk = 0-(g' * sk + 0.5 * sk' * Bk * sk)
+            f_new = func(x+sk)
 
-            if Predk < epsilon_hat
+            Predk = f-(f + g' * sk + 0.5 * sk' * Bk * sk)
+
+            if Predk < gtol
                 println("0 gradient convergence criterion reached")
-                return x+sk, f, g, iter
+                return x+sk, f_new, g, iter
             end
             #Step 3: Test to accept or reject the trial step
-            f_new = func(x+sk)
+            
             rho = (f - f_new) / Predk
 
-            if rho >= eta
+            if rho >= step_threshold
                 x = x + sk
                 f = f_new
                 g = grad(x)
@@ -86,25 +98,24 @@ module nonlinearlstr
                 println("Iteration: $iter, f: $f, norm(g): $(norm(g))")
                 println("--------------------------------------------")
             #Step 4: Update the trust region radius
-            elseif rho > eta_2
-                radius = maximum([radius, gamma_2 * norm(inv_D*sk)])
-                if radius > max_radius
-                    radius = max_radius
+                if rho > expand_threshold
+                    radius = maximum([radius, expand_factor * norm(inv_Dk*sk)])
+                    if radius > max_radius
+                        radius = max_radius
+                    end
+                elseif rho > shrink_threshold
+                    radius = radius
+                else
+                    maximum([0.5*radius, shrink_factor * norm(inv_Dk*sk)])
                 end
-            elseif rho > eta_1
-                radius = radius
-            elseif rho > eta
-                maximum([0.5*radius, gamma_1 * norm(inv_D*sk)])
             else
                 radius = 0.5 * radius
+                if (radius < min_trust_radius) || (norm(g) < gtol)
+                    # print gradient convergence
+                    println("Gradient convergence criterion reached")
+                    return x, f, g, iter
+                end
             end
-
-            # if (radius < epsilon_hat) || (norm(g) < epsilon)
-            #     # print gradient convergence
-            #     println("Gradient convergence criterion reached")
-            #     return x, f, g, iter
-            # end
-
         end
         println("Maximum number of iterations reached")
         return x, f, g, max_iter
@@ -163,8 +174,6 @@ module nonlinearlstr
             dhatu = inv_D * (ub - x)
             dhat0 = inv_D * -g ./ norm(g)
             dhat0 = dhat0 * radius
-            rhobeg = min(norm(dhat0- dhatl), norm(dhatu - dhat0), radius)
-            # d_hat, info = bobyqa(f_, dhat0, rhobeg = radius, xl = dhatl, xu = dhatu)
             
             newton_step = (2J_hat'J_hat)\(-2J_hat'f)
             if norm(newton_step) < radius

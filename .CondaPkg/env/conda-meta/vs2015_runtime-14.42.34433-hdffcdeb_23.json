@@ -1,0 +1,36 @@
+{
+    "arch": "x86_64",
+    "build": "hdffcdeb_23",
+    "build_number": 23,
+    "build_string": "hdffcdeb_23",
+    "channel": "https://conda.anaconda.org/conda-forge/win-64",
+    "constrains": [],
+    "depends": [
+        "vc14_runtime >=14.42.34433"
+    ],
+    "extracted_package_dir": "C:\\Users\\vitor\\.julia\\scratchspaces\\0b3b1443-0f03-428d-bdfb-f27f9c1191ea\\root\\pkgs\\vs2015_runtime-14.42.34433-hdffcdeb_23",
+    "files": [],
+    "fn": "vs2015_runtime-14.42.34433-hdffcdeb_23.conda",
+    "license": "BSD-3-Clause",
+    "license_family": "BSD",
+    "link": {
+        "source": "C:\\Users\\vitor\\.julia\\scratchspaces\\0b3b1443-0f03-428d-bdfb-f27f9c1191ea\\root\\pkgs\\vs2015_runtime-14.42.34433-hdffcdeb_23",
+        "type": 1
+    },
+    "md5": "5c176975ca2b8366abad3c97b3cd1e83",
+    "name": "vs2015_runtime",
+    "package_tarball_full_path": "C:\\Users\\vitor\\.julia\\scratchspaces\\0b3b1443-0f03-428d-bdfb-f27f9c1191ea\\root\\pkgs\\vs2015_runtime-14.42.34433-hdffcdeb_23.tar.bz2",
+    "paths_data": {
+        "paths": [],
+        "paths_version": 1
+    },
+    "platform": "win",
+    "requested_spec": "",
+    "sha256": "568ce8151eaae256f1cef752fc78651ad7a86ff05153cc7a4740b52ae6536118",
+    "size": 17572,
+    "subdir": "win-64",
+    "timestamp": 1731710685291,
+    "track_features": "",
+    "url": "https://conda.anaconda.org/conda-forge/win-64/vs2015_runtime-14.42.34433-hdffcdeb_23.conda",
+    "version": "14.42.34433"
+}

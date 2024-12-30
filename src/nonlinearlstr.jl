@@ -19,7 +19,7 @@ module nonlinearlstr
         expand_factor = 2.0,
         Beta = 0.99999,
         max_iter = 100,
-        gtol = 1e-8,
+        gtol = 1e-6,
         ) where T
         # Check if x0 is within bounds
         if any(x0 .< lb) || any(x0 .> ub)
@@ -70,7 +70,7 @@ module nonlinearlstr
             dhatu = inv_Dk * (ub - x)
             A = Dk*Bk*Dk
             b = Dk*g
-            d_hat = trsbox(A, b, radius, dhatl, dhatu, gtol, 1000)
+            d_hat = trsbox(A, b, radius, f, dhatl, dhatu, gtol, 1000)
             sk = Beta .* Dk * d_hat
 
             if norm(sk) < gtol

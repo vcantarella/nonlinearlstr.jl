@@ -69,7 +69,8 @@ cost(x0)
 # Run the optimization
 include("../src/nonlinearlstr.jl")
 opt = nonlinearlstr.bounded_trust_region(cost, grad_cost, hess,x0, lb, ub;step_threshold = 1e-5,
- max_iter = 10000, gtol = 1e-10, min_trust_radius = 1e-12, max_trust_radius = 100)
+    initial_radius = 1,
+ max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 10000)
 x = opt[1]
 cost(x)
 

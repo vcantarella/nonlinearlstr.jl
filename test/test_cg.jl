@@ -20,6 +20,7 @@ l = [-10.0, -10.0, -10.0]
 u = [10.0, 10.0, 10.0]
 tol = 1e-9
 max_iter = 1000
-x_trs = trsbox(A, b, Δ, l, u, tol, max_iter)
+fx = 0.
+x_trs = trsbox(A, b, Δ, fx, l, u, tol, max_iter)
 
 @test x_trs ≈ x_inv atol=1e-9

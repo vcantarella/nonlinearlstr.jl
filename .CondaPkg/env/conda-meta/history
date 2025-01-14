@@ -1,4 +1,4 @@
-==> 2024-12-27 16:21:00 <==
+==> 2025-01-14 08:56:20 <==
 # cmd: C:\Users\vitor\.julia\artifacts\cba433181fa6470b206db49415f1b7593a9d25ff\bin\micromamba.exe -r C:\Users\vitor\.julia\scratchspaces\0b3b1443-0f03-428d-bdfb-f27f9c1191ea\root create -y -p c:\Users\vitor\Documents\nonlinearlstr\.CondaPkg\env --override-channels --no-channel-priority openssl[version='>=3, <3.1'] python[version='>=3.8,<4',channel='conda-forge',build='*cpython*'] scipy[version='*'] -c conda-forge
 # conda version: 3.8.0
 +https://conda.anaconda.org/conda-forge/win-64::python_abi-3.11-5_cp311
@@ -27,8 +27,8 @@
 +https://conda.anaconda.org/conda-forge/noarch::tzdata-2024b-hc8b5060_0
 +https://conda.anaconda.org/conda-forge/win-64::python-3.11.0-hcf16a7b_0_cpython
 +https://conda.anaconda.org/conda-forge/noarch::wheel-0.45.1-pyhd8ed1ab_1
-+https://conda.anaconda.org/conda-forge/noarch::setuptools-75.6.0-pyhff2d567_1
++https://conda.anaconda.org/conda-forge/noarch::setuptools-75.8.0-pyhff2d567_0
 +https://conda.anaconda.org/conda-forge/noarch::pip-24.3.1-pyh8b19718_2
 +https://conda.anaconda.org/conda-forge/win-64::numpy-2.2.1-py311hc213d13_0
-+https://conda.anaconda.org/conda-forge/win-64::scipy-1.14.1-py311hf16d85f_2
++https://conda.anaconda.org/conda-forge/win-64::scipy-1.15.1-py311h6274721_0
 # update specs: ["openssl[version='>=3, <3.1']", "conda-forge::python[version='>=3.8,<4',build=*cpython*]", "scipy=*"]

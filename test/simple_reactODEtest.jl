@@ -58,7 +58,7 @@ end
 cost(p)
 grad_cost(p)
 hess(p) = ForwardDiff.hessian(cost, p)
-hess(p) = grad_cost(p)' * grad_cost(p)
+# hess(p) = grad_cost(p)' * grad_cost(p)
 
 # Define the bounds
 lb = [0.0, 0.0, 0.0, 0.0]
@@ -89,7 +89,7 @@ function jac(x)
 end
 
 using PRIMA
-res = PRIMA.bobyqa(cost, x0, xl=lb, xu=ub)
+res = PRIMA.bobyqa(cost, x0, xl=lb, xu=ub, iprint = PRIMA.MSG_EXIT)
 x_p = res[1]
 cost(x_p)
 
@@ -97,13 +97,13 @@ cost(x_p)
 using NonlinearSolve
 res_2(x, p) = resi(x)
 nlls_prob = NonlinearProblem(res_2, x0)
-nlls_sol = solve(nlls_prob, TrustRegion(initial_trust_radius = 1e-6);
+nlls_sol = solve(nlls_prob, TrustRegion(initial_trust_radius = 1);
      maxiters = 1000, show_trace = Val(true),
 trace_level = NonlinearSolve.TraceWithJacobianConditionNumber(25))
 p_nl = nlls_sol.u
 cost(p_nl)
 # Setup the ODE problem, then solve
-prob = ODEProblem(lotka_volterra!, u0, tspan, x_p)
+prob = ODEProblem(lotka_volterra!, u0, tspan, x)
 sol = solve(prob, Tsit5())
 plot(sol; linewidth = 3, color = [:red :blue])
 scatter!(tsteps, u_noisy1, yerror = σ1, label = "x noisy", color = :red)
@@ -113,12 +113,12 @@ using PythonCall
 
 scipy = pyimport("scipy.optimize")
 
-pyls = scipy.least_squares(resi, x0, jac=jac, bounds=(lb, ub))
+pyls = scipy.least_squares(resi, x0, jac=jac, bounds=(lb, ub), verbose=2)
 x_py = pyconvert(Vector, pyls.x)
 cost(x_py)
 cost(x0)
 # Setup the ODE problem, then solve
-prob = ODEProblem(lotka_volterra!, u0, tspan, x)
+prob = ODEProblem(lotka_volterra!, u0, tspan, x_p)
 sol = solve(prob, Tsit5())
 plot(sol; linewidth = 3, color = [:red :blue])
 scatter!(tsteps, u_noisy1, yerror = σ1, label = "x noisy", color = :red)
@@ -126,3 +126,5 @@ scatter!(tsteps, u_noisy2, yerror = σ2, label = "y noisy", color = :blue)
 
 
 # Setting up non linear least squares experiment
+include("../src/linear_least_squares.jl")
+B₀ = hess(x0)

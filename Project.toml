@@ -5,6 +5,7 @@ version = "1.0.0-DEV"
 
 [deps]
 ADNLPModels = "54578032-b7ea-4c30-94aa-7cbd1cce6c9a"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUTEst = "1b53aba6-35b6-5f92-a507-53c67d53f819"
 CaNNOLeS = "5a1c9e79-9c58-5ec0-afc4-3298fdea2875"
 CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
@@ -24,6 +25,7 @@ StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 
 [compat]
 ADNLPModels = "0.8.10"
+BenchmarkTools = "1.6.0"
 CUTEst = "1.0.3"
 CaNNOLeS = "0.7.7"
 CondaPkg = "0.2.24"

@@ -50,7 +50,7 @@ bounds
 sol_py = scipy.minimize(fur, x0, method="trust-constr", jac=gur, hess=H, bounds=bounds)
 x_py = pyconvert(Vector, sol_py.x)
 f(x_py)
-res = PRIMA.bobyqa(f, x0, xl=lb, xu=ub, rhobeg = 0.001)
+res = PRIMA.bobyqa(fur, x0, xl=lb, xu=ub, rhobeg = 0.001)
 x_p = res[1]
-f(x_p)
+fur(x_p)
 finalize(nlp)

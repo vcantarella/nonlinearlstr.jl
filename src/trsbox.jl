@@ -39,11 +39,9 @@ function trsbox(H::AbstractMatrix, grad::AbstractVector,
                 Δ::Real, fx::Real,
                 lb::AbstractVector,
                 ub::AbstractVector, tol::Real,
-                max_iter::Int,
-                stall_counts::Int = 5)
+                max_iter::Int,)
     # Step 1: Initialization
-    n = length(grad)
-    d = zeros(n) #Initial guess is zero Powell(2009)
+    d = zeros(eltype(grad), length(grad)) #Initial guess is zero Powell(2009)
     g = H*d + grad # gradient of the quadratic function
     u = -g
     s = Int[] # inactive set

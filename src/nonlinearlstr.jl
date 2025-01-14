@@ -1,6 +1,7 @@
 module nonlinearlstr
     include("Affinescale.jl")
     include("trsbox.jl")
+    include("tcg.jl")
     using LinearAlgebra
     using PRIMA
     using Roots
@@ -12,9 +13,9 @@ module nonlinearlstr
         max_trust_radius = nothing,
         min_trust_radius = 1e-12,
         initial_radius = 1.0,
-        step_threshold = 0.0001,
+        step_threshold = 0.01,
         shrink_threshold = 0.25,
-        expand_threshold = 0.75,
+        expand_threshold = 0.9,
         shrink_factor = 0.25,
         expand_factor = 2.0,
         Beta = 0.99999,
@@ -70,27 +71,26 @@ module nonlinearlstr
             dhatu = inv_Dk * (ub - x)
             A = Dk*Bk*Dk
             b = Dk*g
-            d_hat = trsbox(A, b, radius, f, dhatl, dhatu, gtol, 1000)
+            d_hat = tcg(A, b, radius, dhatl, dhatu, gtol, 1000)
             sk = Beta .* Dk * d_hat
 
             if norm(sk) < gtol
                 println("Step size convergence criterion reached")
-                return x+sk, f, g, iter
+                return x, f, g, iter
             end
 
             f_new = func(x+sk)
+            actual_reduction = f - f_new
+            pred_reduction = -(0.5 * sk' * Bk * sk + g' * sk)
+            ρ = actual_reduction / pred_reduction
 
-            Predk = f-(f + g' * sk + 0.5 * sk' * Bk * sk)
-
-            if Predk < gtol
-                println("0 gradient convergence criterion reached")
-                return x+sk, f_new, g, iter
-            end
+            # if Predk < gtol
+            #     println("0 gradient convergence criterion reached")
+            #     return x, f, g, iter
+            # end
             #Step 3: Test to accept or reject the trial step
-            
-            rho = (f - f_new) / Predk
 
-            if rho >= step_threshold
+            if ρ >= step_threshold
                 x = x + sk
                 f = f_new
                 g = grad(x)
@@ -98,23 +98,21 @@ module nonlinearlstr
                 println("Iteration: $iter, f: $f, norm(g): $(norm(g))")
                 println("--------------------------------------------")
             #Step 4: Update the trust region radius
-                if rho > expand_threshold
+                if ρ > expand_threshold
                     radius = maximum([radius, expand_factor * norm(inv_Dk*sk)])
                     if radius > max_radius
                         radius = max_radius
                     end
-                elseif rho > shrink_threshold
-                    radius = radius
-                else
+                elseif ρ < shrink_threshold
                     maximum([0.5*radius, shrink_factor * norm(inv_Dk*sk)])
                 end
             else
                 radius = 0.5 * radius
-                if (radius < min_trust_radius) || (norm(g) < gtol)
-                    # print gradient convergence
-                    println("Gradient convergence criterion reached")
-                    return x, f, g, iter
-                end
+            end
+            if (radius < min_trust_radius) || (norm(g) < gtol)
+                # print gradient convergence
+                println("Gradient convergence criterion reached")
+                return x, f, g, iter
             end
         end
         println("Maximum number of iterations reached")

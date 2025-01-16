@@ -110,6 +110,10 @@ opt_nls = nonlinearlstr.nlss_bounded_trust_region(resi, jac, x0, lb, ub;step_thr
 
 x = opt_nls[1]
 cost(x)
+hess_approx(x) = jac(x)' * jac(x)
+opt_v2 = nonlinearlstr.bounded_trust_region(cost, grad_cost,hess_approx ,x0, lb, ub;step_threshold = 1e-5,
+    initial_radius = 1e0,
+ max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 100)
 
 # Setup the ODE problem, then solve
 prob = ODEProblem(lotka_volterra!, u0, tspan, x)

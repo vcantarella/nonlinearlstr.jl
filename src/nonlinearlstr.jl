@@ -28,7 +28,7 @@ module nonlinearlstr
         end
     
         f0 = func(x0)
-        if max_trust_radius == nothing
+        if max_trust_radius === nothing
             max_radius = max(norm(f0), maximum(x0) - minimum(x0))
         else
             max_radius = max_trust_radius
@@ -69,8 +69,8 @@ module nonlinearlstr
             # f_dhat(d_hat) = (Dk*g)'*d_hat + 0.5*d_hat'*(Dk*Bk*Dk)*d_hat
             dhatl = inv_Dk * (lb - x)
             dhatu = inv_Dk * (ub - x)
-            A = inv_Dk*Bk*inv_Dk
-            b = inv_Dk*g
+            A = Dk*Bk*Dk
+            b = Dk*g
             d_hat = zeros(eltype(x0), length(x0))
             try
                 d_hat = tcg(A, b, radius, dhatl, dhatu, gtol, 1000)
@@ -206,7 +206,7 @@ module nonlinearlstr
             # f_dhat(d_hat) = (Dk*g)'*d_hat + 0.5*d_hat'*(Dk*Bk*Dk)*d_hat
             dhatl = inv_Dk * (lb - x)
             dhatu = inv_Dk * (ub - x)
-            J = J*inv_Dk
+            J = J*Dk
             d_hat = tcgnlss(f,J, radius, dhatl, dhatu, gtol, 1000)
             sk = Beta .* Dk * d_hat
 

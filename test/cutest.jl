@@ -24,8 +24,6 @@ iub = nlp.meta.jupp
 irng = nlp.meta.iupp
 lb = nlp.meta.lvar
 ub = nlp.meta.uvar
-x0[x0 .< lb .+ 1e-12] .= lb[x0 .< lb .+ 1e-12] .+ 0.5.*min.(1, ub[x0 .< lb .+ 1e-12] .- lb[x0 .< lb .+ 1e-12])
-x0[x0 .> ub .- 1e-12] .= ub[x0 .> ub .- 1e-12] .- 0.5.*min.(1, ub[x0 .> ub .- 1e-12] .- lb[x0 .> ub .- 1e-12])
 fur(x) = obj(nlp, x)
 gur(x) = grad(nlp, x)
 H(x) = NLPModels.hess(nlp, x)
@@ -37,7 +35,10 @@ fur(x)
 
 
 stats = tron(nlp)
-stats
+stats.objective
+stats.iter
+fur(stats.solution)
+propertynames(stats)
 
 scipy = pyimport("scipy.optimize")
 
@@ -47,9 +48,9 @@ for i in 1:length(lb)
     push!(bounds, (lb[i], ub[i]))
 end
 bounds
-sol_py = scipy.minimize(fur, x0, method="trust-constr", jac=gur, hess=H, bounds=bounds)
+sol_py = scipy.minimize(fur, x0, method="SLSQP", jac=gur, hess=H, bounds=bounds)
 x_py = pyconvert(Vector, sol_py.x)
-f(x_py)
+fur(x_py)
 res = PRIMA.bobyqa(fur, x0, xl=lb, xu=ub, rhobeg = 0.001)
 x_p = res[1]
 fur(x_p)

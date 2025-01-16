@@ -1,7 +1,7 @@
 """
     tcg(H, g, d, Δ, l, u, tol, max_iter)
     Truncated trust region conjugate gradient method to solve the trust region subproblem.
-    based on Steinhaug-Toint algorithm and the TRSBOX.
+    based on Steinhaug-Toint algorithm (Conn et al, 2000), with the active set update for bounds based in the TRSBOX (Powell, 2009).
     Checking its capability to solve the trust region subproblem.
     
 # Arguments
@@ -34,13 +34,17 @@ u = [1.0, 1.0]
 tol = 1e-6
 max_iter = 1000
 d = tcg(H, g, d, Δ, l, u, tol, max_iter)
+
+# References
+- Conn, A. R., Gould, N. I., & Toint, P. L. (2000). Chapter 7. The Trust-Region subproblem. Trust region methods. Siam.
+- Powell, M. J. D. (2009). The BOBYQA algorithm for bound constrained optimization without derivatives. Cambridge NA Report NA2009/06.
 """
 function tcg(H::AbstractMatrix, g::AbstractVector,Δ::Real,
              l::AbstractVector, u::AbstractVector,
              tol::Real, max_iter::Int)
     # Step 1: Initialization
     n = length(g)
-    d = zeros(n) #Initial guess is zero Powell(2009)
+    d = zeros(n) #Initial guess is zero (Powell, 2009)
     g = g
     v = g
     p = -v
@@ -89,8 +93,8 @@ function tcg(H::AbstractMatrix, g::AbstractVector,Δ::Real,
         d = d + α*p
         g_1 = g + α*H*p
         v_1 = g_1
-        Β = (g_1'v_1) / (g'v)
-        p = -v_1 + Β*p
+        β = (g_1'v_1) / (g'v)
+        p = -v_1 + β*p
         g = g_1
         if norm(g) < tol
             return d

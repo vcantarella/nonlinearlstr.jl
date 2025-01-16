@@ -99,3 +99,68 @@ function tcg(H::AbstractMatrix, g::AbstractVector,Δ::Real,
     end
     return d
 end
+
+
+function tcgnlss(f::AbstractVector, J::AbstractMatrix, Δ::Real,
+    l::AbstractVector, u::AbstractVector,
+    tol::Real, max_iter::Int)
+    # Step 1: Initialization
+    d = zeros(size(J,2)) #Initial guess is zero Powell(2009)
+    g = J'f
+    v = g
+    p = -v
+    s = Int[] # inactive set
+    k = 0 #iteration counter
+    touch_bound = false
+    for i in 1:max_iter
+        # Step 1: Update active set
+        if touch_bound
+            for j in eachindex(d)
+                if (abs(d[j] - l[j]) < tol && g[j] ≥ 0) || 
+                (abs(d[j] - u[j]) < tol && g[j] ≤ 0)
+                    push!(s, j)
+                end
+            end
+        end
+        p[s] .= 0 #inactivating bound constraints
+        κ = p'*(J'*(J*p))
+        if κ ≤ 0
+            σ = (- d'p + √((d'p)^2 + (p'p)*(Δ^2 - d'd))) / (p'p)
+            if any(d + σ*p .≤ l)
+                σ = minimum((l-d) ./ p)
+            elseif any(d + σ*p .≥ u)
+                σ = maximum((u-d) ./ p)
+            end
+            return d + σ*p
+        end
+        α = g'v / κ
+        if norm(d + α*p) ≥ Δ
+            σ = (- d'p + √((d'p)^2 + (p'p)*(Δ^2 - d'd))) / (p'p)
+            if any(d + σ*p .≤ l)
+                σ = minimum((l-d) ./ p)
+            elseif any(d + σ*p .≥ u)
+                σ = maximum((u-d) ./ p)
+            end
+            return d + σ*p
+        end
+        
+        if any(d + α*p .≤ l)
+            α = minimum((l-d) ./ p)
+            touch_bound = true
+        elseif any(d + α*p .≥ u)
+            α = maximum((u-d) ./ p)
+            touch_bound = true
+        end
+        d = d + α*p
+        g_1 = g + α*J'*(J*p)
+        v_1 = g_1
+        Β = (g_1'v_1) / (g'v)
+        p = -v_1 + Β*p
+        g = g_1
+        if norm(g) < tol
+            return d
+        end
+        v = v_1
+    end
+    return d
+end

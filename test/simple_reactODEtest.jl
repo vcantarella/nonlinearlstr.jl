@@ -69,8 +69,8 @@ cost(x0)
 # Run the optimization
 include("../src/nonlinearlstr.jl")
 opt = nonlinearlstr.bounded_trust_region(cost, grad_cost, hess,x0, lb, ub;step_threshold = 1e-5,
-    initial_radius = 1,
- max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 10000)
+    initial_radius = 1e0,
+ max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 100)
 x = opt[1]
 cost(x)
 
@@ -94,6 +94,7 @@ x_p = res[1]
 cost(x_p)
 
 
+
 using NonlinearSolve
 res_2(x, p) = resi(x)
 nlls_prob = NonlinearProblem(res_2, x0)
@@ -102,6 +103,14 @@ nlls_sol = solve(nlls_prob, TrustRegion(initial_trust_radius = 1);
 trace_level = NonlinearSolve.TraceWithJacobianConditionNumber(25))
 p_nl = nlls_sol.u
 cost(p_nl)
+
+opt_nls = nonlinearlstr.nlss_bounded_trust_region(resi, jac, x0, lb, ub;step_threshold = 1e-5,
+    initial_radius = 1e0,
+ max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 10000)
+
+x = opt_nls[1]
+cost(x)
+
 # Setup the ODE problem, then solve
 prob = ODEProblem(lotka_volterra!, u0, tspan, x)
 sol = solve(prob, Tsit5())

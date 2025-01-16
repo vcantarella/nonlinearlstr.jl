@@ -156,10 +156,10 @@ function tcgnlss(f::AbstractVector, J::AbstractMatrix, Δ::Real,
             touch_bound = true
         end
         d = d + α*p
-        g_1 = g + α*J'*(J*p)
+        g_1 = g + α*(J'*(J*p))
         v_1 = g_1
-        Β = (g_1'v_1) / (g'v)
-        p = -v_1 + Β*p
+        β = (g_1'v_1) / (g'v)
+        p = -v_1 + β*p
         g = g_1
         if norm(g) < tol
             return d

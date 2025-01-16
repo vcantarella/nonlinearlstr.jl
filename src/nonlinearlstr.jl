@@ -109,13 +109,7 @@ module nonlinearlstr
             pred_reduction = -(0.5 * sk' * Bk * sk + g' * sk)
             ρ = actual_reduction / pred_reduction
 
-            # if Predk < gtol
-            #     println("0 gradient convergence criterion reached")
-            #     return x, f, g, iter
-            # end
-            #Step 3: Test to accept or reject the trial step
-
-            if ρ >= step_threshold
+            if ρ ≥ step_threshold
                 x = x + sk
                 f = f_new
                 g = grad(x)
@@ -207,7 +201,23 @@ module nonlinearlstr
             dhatl = inv_Dk * (lb - x)
             dhatu = inv_Dk * (ub - x)
             J = J*Dk
-            d_hat = tcgnlss(f,J, radius, dhatl, dhatu, gtol, 1000)
+            d_hat = zeros(eltype(x0), length(x0))
+            try
+                d_hat = tcgnlss(f,J, radius, dhatl, dhatu, gtol, 1000)
+            catch e
+                if isa(e, DomainError)
+                    println("Domain error encountered: ", e)
+                    radius = 0.5 * radius
+                    if (radius < min_trust_radius) || (norm(g) < gtol)
+                        # print gradient convergence
+                        println("Gradient convergence criterion reached")
+                        return x, f, g, iter
+                    end
+                    continue
+                else
+                    rethrow(e)
+                end
+            end
             sk = Beta .* Dk * d_hat
 
             if norm(sk) < gtol
@@ -216,22 +226,25 @@ module nonlinearlstr
             end
 
             f_new = res(x+sk)
-            actual_reduction = 1/2(norm(f'f) - norm(f_new'f_new))
-            pred_reduction = -(0.5 * sk' * J'J * sk + g' * sk)
+            actual_reduction = 0.5*(sum(f'f) - sum(f_new'f_new))
+            if actual_reduction < 0
+                radius = 0.5 * radius
+                if (radius < min_trust_radius) || (norm(g) < gtol)
+                    # print gradient convergence
+                    println("Gradient convergence criterion reached")
+                    return x, f, g, iter
+                end
+                continue
+            end
+            pred_reduction = -(0.5 * sk' * J'J * sk + sk'g)
             ρ = actual_reduction / pred_reduction
-
-            # if Predk < gtol
-            #     println("0 gradient convergence criterion reached")
-            #     return x, f, g, iter
-            # end
-            #Step 3: Test to accept or reject the trial step
 
             if ρ >= step_threshold
                 x = x + sk
                 f = f_new
                 J = jac(x)
                 g = J' * f
-                println("Iteration: $iter, f: $f, norm(g): $(norm(g))")
+                println("Iteration: $iter, f: $(0.5*sum(f'f)), norm(g): $(norm(g))")
                 println("--------------------------------------------")
             #Step 4: Update the trust region radius
                 if ρ > expand_threshold

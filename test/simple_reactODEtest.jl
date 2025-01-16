@@ -41,7 +41,7 @@ scatter!(tsteps, u_noisy2, yerror = σ2, label = "y noisy", color = :blue)
 # Define the cost function
 function cost(p)
     prob = ODEProblem(lotka_volterra!, u0, tspan, p)
-    sol = solve(prob, Tsit5(); saveat = tsteps, reltol = 1e-9, abstol = 1e-9)
+    sol = solve(prob, Rosenbrock23(); saveat = tsteps, reltol = 1e-9, abstol = 1e-9)
     u = sol.u
     u1 = [ux[1] for ux in u]
     u2 = [ux[2] for ux in u]
@@ -76,11 +76,11 @@ cost(x)
 
 function resi(x)
     problem = ODEProblem(lotka_volterra!, u0, tspan, x)
-    sol = solve(problem, Rosenbrock23(); saveat = tsteps)
+    sol = solve(problem, Rosenbrock23(); saveat = tsteps, reltol = 1e-9, abstol = 1e-9)
     u = sol.u
     u1 = [ux[1] for ux in u]
     u2 = [ux[2] for ux in u]
-    [(u_noisy1 .- u1)./σ1.^2; (u_noisy2 .- u2)./σ2.^2]
+    [(u_noisy1 .- u1)./σ1; (u_noisy2 .- u2)./σ2]
     
 end
 
@@ -113,8 +113,9 @@ cost(x)
 hess_approx(x) = jac(x)' * jac(x)
 opt_v2 = nonlinearlstr.bounded_trust_region(cost, grad_cost,hess_approx ,x0, lb, ub;step_threshold = 1e-5,
     initial_radius = 1e0,
- max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 100)
-
+ max_iter = 10000, gtol = 1e-8, min_trust_radius = 1e-12, max_trust_radius = 100)
+x_v2 = opt_v2[1]
+cost(x_v2)
 # Setup the ODE problem, then solve
 prob = ODEProblem(lotka_volterra!, u0, tspan, x)
 sol = solve(prob, Tsit5())

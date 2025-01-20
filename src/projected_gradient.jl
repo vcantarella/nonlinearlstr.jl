@@ -139,7 +139,7 @@ function compute_Z_matrix(diagonal_entries::Vector{T}) where T<:Number
     return Z
 end
 
-function projected_cg(c, G, l, u, Δ, maxiters = 100)
+function projected_cg(c, G, l, u, Δ, maxiters = 100, tol = 1e-8)
     x = zeros(length(c))
     xᶜ, active_set = cauchy_point(x, c, G, l, u, Δ)
     x[active_set] .= xᶜ[active_set]
@@ -147,25 +147,37 @@ function projected_cg(c, G, l, u, Δ, maxiters = 100)
     r = G*x + c
     g = P*r
     d = -g
+    d[active_set] .= 0
     touch_bound = false
     for i in 1:maxiters
-        κ = d'H*d
+        if touch_bound
+            for j in eachindex(x)
+                if (abs(x[j] - l[j]) < tol && g[j] ≥ 0) || 
+                (abs(x[j] - u[j]) < tol && g[j] ≤ 0)
+                    if j ∉ active_set
+                        push!(active_set, j)
+                        P = Diagonal([1 for i in x if i ∉ active_set])
+                    end
+                end
+            end
+        end
+        κ = d'G*d
         if κ ≤ 0
             return xᶜ
         end
         α = r'g/κ
-        if any(x + α*d .≤ l)
+        if any(x + α*d .< l)
             α = minimum((l-x) ./ d)
             touch_bound = true
-        elseif any(x + α*d .≥ u)
+        elseif any(x + α*d .> u)
             α = maximum((u-x) ./ d)
             touch_bound = true
         end
         if norm(x + α*d) ≥ Δ
             σ = (- x'd + √((x'd)^2 + (d'd)*(Δ^2 - x'x))) / (d'd)
-            if any(x + σ*d .≤ l)
+            if any(x + σ*d .< l)
                 σ = minimum((l-x) ./ d)
-            elseif any(x + σ*d .≥ u)
+            elseif any(x + σ*d .> u)
                 σ = maximum((u-x) ./ d)
             end
             return x + σ*d
@@ -174,6 +186,14 @@ function projected_cg(c, G, l, u, Δ, maxiters = 100)
         r⁺ = r + α*G*d
         g⁺ = P*r⁺
         β = (r⁺'g⁺) / (r'g)
+        d = -g⁺ + β*d
+        r = r⁺
+        g = g⁺
+        d[active_set] .= 0
+        if abs(r'g - r'P*r) < tol
+            return x
+        end
     end
-
+    println("Warning: Maximum number of iterations reached for projected gradient CG.")
+    return x
 end

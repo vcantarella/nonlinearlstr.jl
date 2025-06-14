@@ -49,11 +49,11 @@ function tcg(H::AbstractMatrix, g::AbstractVector,Δ::Real,
     v = g
     p = -v
     s = Int[] # inactive set
-    k = 0 #iteration counter
     touch_bound = false
     for i in 1:max_iter
         # Step 1: Update active set
         if touch_bound
+            println("bound touched")
             for j in eachindex(d)
                 if (abs(d[j] - l[j]) < tol && g[j] ≥ 0) || 
                 (abs(d[j] - u[j]) < tol && g[j] ≤ 0)
@@ -65,30 +65,41 @@ function tcg(H::AbstractMatrix, g::AbstractVector,Δ::Real,
         κ = p'H*p
         if κ ≤ 0
             σ = (- d'p + √((d'p)^2 + (p'p)*(Δ^2 - d'd))) / (p'p)
-            if any(d + σ*p .≤ l)
+            if any((d + σ*p) .≤ l)
                 σ = minimum((l-d) ./ p)
-            elseif any(d + σ*p .≥ u)
+                touch_bound = true
+            elseif any((d + σ*p) .≥ u)
                 σ = maximum((u-d) ./ p)
+                touch_bound = true
             end
             return d + σ*p
         end
         α = g'v / κ
         if norm(d + α*p) ≥ Δ
             σ = (- d'p + √((d'p)^2 + (p'p)*(Δ^2 - d'd))) / (p'p)
-            if any(d + σ*p .≤ l)
+            if any((d + σ*p) .≤ l)
                 σ = minimum((l-d) ./ p)
-            elseif any(d + σ*p .≥ u)
+                touch_bound = true
+            elseif any((d + σ*p) .≥ u)
                 σ = maximum((u-d) ./ p)
+                touch_bound = true
             end
             return d + σ*p
         end
         
-        if any(d + α*p .≤ l)
+        if any((d + α*p) .≤ l)
             α = minimum((l-d) ./ p)
             touch_bound = true
-        elseif any(d + α*p .≥ u)
+            new_touches = findall((d + α*p) .≤ l)
+            valid_touches = [k for k in new_touches if g[k] ≥ 0]
+            s = vcat(s, valid_touches)
+
+        elseif any((d + α*p) .≥ u)
             α = maximum((u-d) ./ p)
             touch_bound = true
+            new_touches = findall((d + α*p) .≥ u)
+            valid_touches = [k for k in new_touches if g[k] ≤ 0]
+            s = vcat(s, valid_touches)
         end
         d = d + α*p
         g_1 = g + α*H*p

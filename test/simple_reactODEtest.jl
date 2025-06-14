@@ -68,9 +68,9 @@ x0 = [rand() * (ub[i] - lb[i]) + lb[i] for i in 1:4]
 cost(x0)
 # Run the optimization
 include("../src/nonlinearlstr.jl")
-opt = nonlinearlstr.bounded_trust_region(cost, grad_cost, hess,x0, lb, ub;step_threshold = 1e-5,
+opt = nonlinearlstr.bounded_trust_region(cost, grad_cost, hess,x0, lb, ub;step_threshold = 1e-4,
     initial_radius = 1e0,
- max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 100)
+ max_iter = 10000, gtol = 1e-8, min_trust_radius = 1e-9, max_trust_radius = 100)
 x = opt[1]
 cost(x)
 
@@ -114,6 +114,9 @@ hess_approx(x) = jac(x)' * jac(x)
 opt_v2 = nonlinearlstr.bounded_trust_region(cost, grad_cost,hess_approx ,x0, lb, ub;step_threshold = 1e-5,
     initial_radius = 1e0,
  max_iter = 10000, gtol = 1e-8, min_trust_radius = 1e-12, max_trust_radius = 100)
+x_v2 = opt_v2[1]
+cost(x_v2)
+ max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 100)
 x_v2 = opt_v2[1]
 cost(x_v2)
 # Setup the ODE problem, then solve

@@ -8,7 +8,7 @@ using NonlinearSolve
 
 # Load the CUTEst problem
 available_problems = list_sif_problems()
-filtered_problems = CUTEst.select(objtype="sum_of_squares", contype="bounds")
+filtered_problems = CUTEst.select_sif_problems(objtype="sum_of_squares", contype="bounds")
 nlp = CUTEstModel(filtered_problems[3])
 println("x0 = $( nlp.meta.x0 )")
 
@@ -44,7 +44,7 @@ scipy = pyimport("scipy.optimize")
 
 # make a sequence of bounds
 bounds = []
-for i in 1:length(lb)
+for i in eachindex(lb)
     push!(bounds, (lb[i], ub[i]))
 end
 bounds

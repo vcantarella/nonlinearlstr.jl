@@ -5,6 +5,7 @@ module nonlinearlstr
     using LinearAlgebra
     using PRIMA
     using Roots
+    
 
     function bounded_trust_region(
         func::Function, grad::Function,
@@ -107,6 +108,15 @@ module nonlinearlstr
                 continue
             end
             pred_reduction = -(0.5 * sk' * Bk * sk + g' * sk)
+            if pred_reduction < 0
+                radius = 0.5 * radius
+                if (radius < min_trust_radius) || (norm(g) < gtol)
+                    # print gradient convergence
+                    println("Gradient convergence criterion reached")
+                    return x, f, g, iter
+                end
+                continue
+            end
             ρ = actual_reduction / pred_reduction
 
             if ρ ≥ step_threshold

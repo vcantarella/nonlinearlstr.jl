@@ -36,16 +36,16 @@ function levenberg_marquadtv2(x, f, J, λ, tol, max_iter)
     return x
 end
 
-function levenberg_subproblem!(λ, p, q, Δ, B₀, g, maxiters)
+function trust_region_subproblem!(λ, p, q, Δ, B₀, g, maxiters)
     for i in 1:maxiters
         if norm(p) <= Δ
             break
         end
-        B - B₀ + λ*I
-        R = cholesky(B)
-        p = R'\(R\g)
-        q = R'\ p
+        B = B₀ + λ*I
+        F = cholesky(B)
+        p = F \ -g
+        q = F'\ p
         λ = λ + (p'p)/(q'p) * (norm(p) - Δ)/Δ
     end
-    return λ
+    return λ, p
 end

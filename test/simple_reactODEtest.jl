@@ -1,4 +1,4 @@
-using DifferentialEquations
+using OrdinaryDiffEq
 using SciMLSensitivity
 using ForwardDiff
 using LinearAlgebra
@@ -98,7 +98,7 @@ cost(x_p)
 using NonlinearSolve
 res_2(x, p) = resi(x)
 nlls_prob = NonlinearProblem(res_2, x0)
-nlls_sol = solve(nlls_prob, TrustRegion(initial_trust_radius = 1);
+nlls_sol = solve(nlls_prob, TrustRegion(initial_trust_radius = 0.01);
      maxiters = 1000, show_trace = Val(true),
 trace_level = NonlinearSolve.TraceWithJacobianConditionNumber(25))
 p_nl = nlls_sol.u
@@ -108,8 +108,16 @@ opt_nls = nonlinearlstr.nlss_bounded_trust_region(resi, jac, x0, lb, ub;step_thr
     initial_radius = 1e0,
  max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 10000)
 
+# Test the new QR-based solver
+opt_qr = nonlinearlstr.qr_nlss_bounded_trust_region(resi, jac, x0, lb, ub;
+    initial_radius = 1e0,
+    max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 10000)
+
 x = opt_nls[1]
 cost(x)
+x_qr = opt_qr[1]
+cost(x_qr)
+println("QR solver vs old solver cost ratio: ", cost(x_qr) / cost(x))
 hess_approx(x) = jac(x)' * jac(x)
 opt_v2 = nonlinearlstr.bounded_trust_region(cost, grad_cost,hess_approx ,x0, lb, ub;step_threshold = 1e-5,
     initial_radius = 1e0,

@@ -2,6 +2,7 @@ module nonlinearlstr
     include("Affinescale.jl")
     include("trsbox.jl")
     include("tcg.jl")
+    include("qr_nlls.jl")
     using LinearAlgebra
     using PRIMA
     using Roots
@@ -228,6 +229,8 @@ module nonlinearlstr
                     rethrow(e)
                 end
             end
+            H = qr(J'J)
+            d_hat = tcgnlss_v2(H, g, radius, dhatl, dhatu, gtol, 1000)
             sk = Beta .* Dk * d_hat
 
             if norm(sk) < gtol
@@ -247,6 +250,8 @@ module nonlinearlstr
                 continue
             end
             pred_reduction = -(0.5 * sk' * J'J * sk + sk'g)
+            actual_reduction = 1/2(norm(f'f) - norm(f_new'f_new))
+            pred_reduction = -(0.5 * sk' * H.Q * H.R * sk + g' * sk)
             ρ = actual_reduction / pred_reduction
 
             if ρ >= step_threshold
@@ -274,6 +279,161 @@ module nonlinearlstr
                 return x, f, g, iter
             end
         end
+        println("Maximum number of iterations reached")
+        return x, f, g, max_iter
+    end
+
+    """
+        qr_nlss_bounded_trust_region(res::Function, jac::Function, x0, lb, ub; kwargs...)
+
+    QR-based nonlinear least squares solver with bounded trust region method.
+    Uses QR factorization for improved numerical stability.
+
+    # Arguments
+    - `res::Function`: Residual function r(x) returning vector of residuals
+    - `jac::Function`: Jacobian function J(x) returning m×n matrix  
+    - `x0::Array`: Initial parameter guess
+    - `lb::Array`: Lower bounds
+    - `ub::Array`: Upper bounds
+
+    # Keyword Arguments
+    - `initial_radius::Real = 1.0`: Initial trust region radius
+    - `max_trust_radius::Real = 100.0`: Maximum trust region radius
+    - `min_trust_radius::Real = 1e-12`: Minimum trust region radius
+    - `step_threshold::Real = 0.01`: Threshold for accepting steps
+    - `shrink_threshold::Real = 0.25`: Threshold for shrinking radius
+    - `expand_threshold::Real = 0.9`: Threshold for expanding radius
+    - `shrink_factor::Real = 0.25`: Factor for shrinking radius
+    - `expand_factor::Real = 2.0`: Factor for expanding radius
+    - `max_iter::Int = 100`: Maximum iterations
+    - `gtol::Real = 1e-6`: Gradient tolerance
+    - `ftol::Real = 1e-15`: Function tolerance
+    - `regularization::Real = 0.0`: L2 regularization parameter
+
+    # Returns
+    - Tuple (x, residuals, gradient, iterations)
+    """
+    function qr_nlss_bounded_trust_region(
+        res::Function, jac::Function,
+        x0::Array{T}, lb::Array{T}, ub::Array{T};
+        initial_radius::Real = 1.0,
+        max_trust_radius::Real = 100.0,
+        min_trust_radius::Real = 1e-12,
+        step_threshold::Real = 0.01,
+        shrink_threshold::Real = 0.25,
+        expand_threshold::Real = 0.9,
+        shrink_factor::Real = 0.25,
+        expand_factor::Real = 2.0,
+        max_iter::Int = 100,
+        gtol::Real = 1e-6,
+        ftol::Real = 1e-15,
+        regularization::Real = 0.0,
+        ) where T
+
+        # Validate input
+        if any(x0 .< lb) || any(x0 .> ub)
+            error("Initial guess x0 is not within bounds")
+        end
+
+        # Initialize
+        x = copy(x0)
+        f = res(x)
+        J = jac(x)
+        qrls = QRLeastSquares(J)
+        
+        cost = 0.5 * dot(f, f)
+        g = compute_gradient(qrls, f)
+        
+        radius = initial_radius
+        
+        # Check initial convergence
+        if norm(g, Inf) < gtol
+            println("Initial guess satisfies gradient tolerance")
+            return x, f, g, 0
+        end
+
+        for iter in 1:max_iter
+            # Update QR factorization
+            update!(qrls, J)
+            
+            # Compute step using QR-based trust region
+            try
+                δ = qr_trust_region_step(qrls, f, radius, lb, ub, x; λ=regularization)
+                
+                if norm(δ) < min_trust_radius
+                    println("Step size below minimum trust radius")
+                    return x, f, g, iter
+                end
+                
+                # Evaluate new point
+                x_new = x + δ
+                f_new = res(x_new)
+                cost_new = 0.5 * dot(f_new, f_new)
+                
+                # Compute reduction ratio
+                actual_reduction = cost - cost_new
+                
+                # Predicted reduction using QR factorization
+                # pred = -g'δ - 0.5 δ'(J'J)δ
+                Jδ = qrls.Q * (qrls.R * δ)
+                predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
+                
+                if predicted_reduction <= 0
+                    println("Non-positive predicted reduction, shrinking radius")
+                    radius *= shrink_factor
+                    continue
+                end
+                
+                ρ = actual_reduction / predicted_reduction
+                
+                # Update trust region radius
+                if ρ >= expand_threshold
+                    radius = min(max_trust_radius, max(radius, expand_factor * norm(δ)))
+                elseif ρ < shrink_threshold
+                    radius *= shrink_factor
+                end
+                
+                # Accept or reject step
+                if ρ >= step_threshold
+                    x = x_new
+                    f = f_new
+                    cost = cost_new
+                    J = jac(x)
+                    g = compute_gradient(qrls, f)
+                    
+                    println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, Inf)), radius: $radius")
+                    
+                    # Check convergence
+                    if norm(g, Inf) < gtol
+                        println("Gradient convergence criterion reached")
+                        return x, f, g, iter
+                    end
+                    
+                    if actual_reduction < ftol * cost
+                        println("Function tolerance criterion reached")
+                        return x, f, g, iter
+                    end
+                else
+                    println("Step rejected, ρ = $ρ")
+                end
+                
+                # Check trust region size
+                if radius < min_trust_radius
+                    println("Trust region radius below minimum")
+                    return x, f, g, iter
+                end
+                
+            catch e
+                println("Error in step computation: $e")
+                radius *= shrink_factor
+                if radius < min_trust_radius
+                    println("Trust region radius below minimum after error")
+                    return x, f, g, iter
+                end
+                continue
+            end
+        end
+        
         println("Maximum number of iterations reached")
         return x, f, g, max_iter
     end

@@ -39,7 +39,7 @@ d = tcg(H, g, d, Δ, l, u, tol, max_iter)
 - Conn, A. R., Gould, N. I., & Toint, P. L. (2000). Chapter 7. The Trust-Region subproblem. Trust region methods. Siam.
 - Powell, M. J. D. (2009). The BOBYQA algorithm for bound constrained optimization without derivatives. Cambridge NA Report NA2009/06.
 """
-function tcg(H::AbstractMatrix, g::AbstractVector,Δ::Real,
+function tcg(H, g::AbstractVector,Δ::Real,
              l::AbstractVector, u::AbstractVector,
              tol::Real, max_iter::Int)
     # Step 1: Initialization
@@ -106,6 +106,82 @@ function tcg(H::AbstractMatrix, g::AbstractVector,Δ::Real,
         v_1 = g_1
         β = (g_1'v_1) / (g'v)
         p = -v_1 + β*p
+        g = g_1
+        if norm(g) < tol
+            return d
+        end
+        v = v_1
+    end
+    return d
+end
+
+function tcgnlss_v2(H, g::AbstractVector,Δ::Real,
+             l::AbstractVector, u::AbstractVector,
+             tol::Real, max_iter::Int)
+    # Step 1: Initialization
+    n = length(g)
+    d = zeros(n) #Initial guess is zero Powell(2009)
+    g = g
+    v = g
+    p = -v
+    s = Int[] # inactive set
+    touch_bound = false
+    for i in 1:max_iter
+        # Step 1: Update active set
+        if touch_bound
+            println("bound touched")
+            for j in eachindex(d)
+                if (abs(d[j] - l[j]) < tol && g[j] ≥ 0) || 
+                (abs(d[j] - u[j]) < tol && g[j] ≤ 0)
+                    push!(s, j)
+                end
+            end
+        end
+        p[s] .= 0 #inactivating bound constraints
+        κ = p'*(H.Q*(H.R*p))
+        if κ ≤ 0
+            σ = (- d'p + √((d'p)^2 + (p'p)*(Δ^2 - d'd))) / (p'p)
+            if any((d + σ*p) .≤ l)
+                σ = minimum((l-d) ./ p)
+                touch_bound = true
+            elseif any((d + σ*p) .≥ u)
+                σ = maximum((u-d) ./ p)
+                touch_bound = true
+            end
+            return d + σ*p
+        end
+        α = g'v / κ
+        if norm(d + α*p) ≥ Δ
+            σ = (- d'p + √((d'p)^2 + (p'p)*(Δ^2 - d'd))) / (p'p)
+            if any((d + σ*p) .≤ l)
+                σ = minimum((l-d) ./ p)
+                touch_bound = true
+            elseif any((d + σ*p) .≥ u)
+                σ = maximum((u-d) ./ p)
+                touch_bound = true
+            end
+            return d + σ*p
+        end
+        
+        if any((d + α*p) .≤ l)
+            α = minimum((l-d) ./ p)
+            touch_bound = true
+            new_touches = findall((d + α*p) .≤ l)
+            valid_touches = [k for k in new_touches if g[k] ≥ 0]
+            s = vcat(s, valid_touches)
+
+        elseif any((d + α*p) .≥ u)
+            α = maximum((u-d) ./ p)
+            touch_bound = true
+            new_touches = findall((d + α*p) .≥ u)
+            valid_touches = [k for k in new_touches if g[k] ≤ 0]
+            s = vcat(s, valid_touches)
+        end
+        d = d + α*p
+        g_1 = g + α*(H.Q*(H.R*p))
+        v_1 = g_1
+        Β = (g_1'v_1) / (g'v)
+        p = -v_1 + Β*p
         g = g_1
         if norm(g) < tol
             return d

@@ -24,6 +24,9 @@ prob = ODEProblem(lotka_volterra!, u0, tspan, p)
 sol = solve(prob, Tsit5(); saveat = tsteps)
 
 # Generate error-prone heterosckedastic measurements
+using Random
+Random.seed!(6674823)  # Set seed for reproducibility
+
 u = sol.u
 u1 = [ux[1] for ux in u]
 σ1 = 0.1 * u1
@@ -70,9 +73,9 @@ cost(x0)
 include("../src/nonlinearlstr.jl")
 opt = nonlinearlstr.bounded_trust_region(cost, grad_cost, hess,x0, lb, ub;step_threshold = 1e-4,
     initial_radius = 1e0,
- max_iter = 10000, gtol = 1e-8, min_trust_radius = 1e-9, max_trust_radius = 100)
+ max_iter = 1000, gtol = 1e-8, min_trust_radius = 1e-9, max_trust_radius = 100)
 x = opt[1]
-cost(x)
+@show cost(x)
 
 function resi(x)
     problem = ODEProblem(lotka_volterra!, u0, tspan, x)
@@ -91,7 +94,7 @@ end
 using PRIMA
 res = PRIMA.bobyqa(cost, x0, xl=lb, xu=ub, iprint = PRIMA.MSG_EXIT)
 x_p = res[1]
-cost(x_p)
+@show cost(x_p)
 
 
 
@@ -102,37 +105,32 @@ nlls_sol = solve(nlls_prob, TrustRegion(initial_trust_radius = 0.01);
      maxiters = 1000, show_trace = Val(true),
 trace_level = NonlinearSolve.TraceWithJacobianConditionNumber(25))
 p_nl = nlls_sol.u
-cost(p_nl)
+@show cost(p_nl)
 
 opt_nls = nonlinearlstr.nlss_bounded_trust_region(resi, jac, x0, lb, ub;step_threshold = 1e-5,
     initial_radius = 1e0,
- max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 10000)
+ max_iter = 1000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 1000)
 
 # Test the new QR-based solver
 opt_qr = nonlinearlstr.qr_nlss_bounded_trust_region(resi, jac, x0, lb, ub;
     initial_radius = 1e0,
-    max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 10000)
+    max_iter = 1000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 1000)
 
 x = opt_nls[1]
-cost(x)
+@show cost(x)
 x_qr = opt_qr[1]
-cost(x_qr)
+@show cost(x_qr)
 println("QR solver vs old solver cost ratio: ", cost(x_qr) / cost(x))
-hess_approx(x) = jac(x)' * jac(x)
+function hess_approx(x) 
+    J = jac(x)
+    QR = qr(J)
+    return QR.R' * QR.R
+end
 opt_v2 = nonlinearlstr.bounded_trust_region(cost, grad_cost,hess_approx ,x0, lb, ub;step_threshold = 1e-5,
     initial_radius = 1e0,
- max_iter = 10000, gtol = 1e-8, min_trust_radius = 1e-12, max_trust_radius = 100)
+ max_iter = 1000, gtol = 1e-8, min_trust_radius = 1e-6, max_trust_radius = 100)
 x_v2 = opt_v2[1]
 cost(x_v2)
- max_iter = 10000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 100)
-x_v2 = opt_v2[1]
-cost(x_v2)
-# Setup the ODE problem, then solve
-prob = ODEProblem(lotka_volterra!, u0, tspan, x)
-sol = solve(prob, Tsit5())
-plot(sol; linewidth = 3, color = [:red :blue])
-scatter!(tsteps, u_noisy1, yerror = σ1, label = "x noisy", color = :red)
-scatter!(tsteps, u_noisy2, yerror = σ2, label = "y noisy", color = :blue)
 
 using PythonCall
 
@@ -143,13 +141,4 @@ x_py = pyconvert(Vector, pyls.x)
 cost(x_py)
 cost(x0)
 # Setup the ODE problem, then solve
-prob = ODEProblem(lotka_volterra!, u0, tspan, x_p)
-sol = solve(prob, Tsit5())
-plot(sol; linewidth = 3, color = [:red :blue])
-scatter!(tsteps, u_noisy1, yerror = σ1, label = "x noisy", color = :red)
-scatter!(tsteps, u_noisy2, yerror = σ2, label = "y noisy", color = :blue)
 
-
-# Setting up non linear least squares experiment
-include("../src/linear_least_squares.jl")
-B₀ = hess(x0)

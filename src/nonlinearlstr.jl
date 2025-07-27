@@ -4,9 +4,6 @@ module nonlinearlstr
     include("tcg.jl")
     include("qr_nlls.jl")
     using LinearAlgebra
-    using PRIMA
-    using Roots
-    
 
     function bounded_trust_region(
         func::Function, grad::Function,

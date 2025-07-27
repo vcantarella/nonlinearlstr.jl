@@ -22,7 +22,7 @@ Initialize QR factorization from Jacobian matrix J.
 """
 function QRLeastSquares(J::AbstractMatrix{T}; τ::Real = 1e-12) where T
     m, n = size(J)
-    F = qr(J)
+    F = qr(J, ColumnNorm())
     Q = Matrix(F.Q)
     R = Matrix(F.R)
     

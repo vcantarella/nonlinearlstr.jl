@@ -48,7 +48,7 @@ function tcg(H, g::AbstractVector,Δ::Real,
     g = g
     v = g
     p = -v
-    s = Int[] # inactive set
+    s = ones(Int, n) # inactive set
     touch_bound = false
     for i in 1:max_iter
         # Step 1: Update active set
@@ -57,11 +57,14 @@ function tcg(H, g::AbstractVector,Δ::Real,
             for j in eachindex(d)
                 if (abs(d[j] - l[j]) < tol && g[j] ≥ 0) || 
                 (abs(d[j] - u[j]) < tol && g[j] ≤ 0)
-                    push!(s, j)
+                    p[s] .= 0
                 end
             end
         end
         p[s] .= 0 #inactivating bound constraints
+        if sum(p) == 0
+            return d # No active constraints, return current solution
+        end
         κ = p'H*p
         if κ ≤ 0
             σ = (- d'p + √((d'p)^2 + (p'p)*(Δ^2 - d'd))) / (p'p)

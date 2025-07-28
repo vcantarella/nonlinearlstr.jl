@@ -153,149 +153,126 @@ function tcg(H::AbstractMatrix, g::AbstractVector,Δ::Real,
     return d
 end
 
-mutable struct TCGCache{T}
-    # Solution vectors
-    d::Vector{T}    # current solution
-    g::Vector{T}    # gradient
-    v::Vector{T}    # residual
-    p::Vector{T}    # search direction
-    Hp::Vector{T}   # matrix-vector product
+# mutable struct TCGCache{T}
+#     # Solution vectors
+#     d::Vector{T}    # current solution
+#     g::Vector{T}    # gradient
+#     v::Vector{T}    # residual
+#     p::Vector{T}    # search direction
+#     Hp::Vector{T}   # matrix-vector product
     
-    # Computation buffers
-    pHp::T          # p'Hp value
-    gp::T           # g'p value  
-    vv::T           # v'v value
-    vv_next::T      # next v'v value
-    alpha::T        # step length
-    beta::T         # conjugate direction parameter
+#     # Computation buffers
+#     pHp::T          # p'Hp value
+#     gp::T           # g'p value  
+#     vv::T           # v'v value
+#     vv_next::T      # next v'v value
+#     alpha::T        # step length
+#     beta::T         # conjugate direction parameter
     
-    # Sets
-    s::Vector{Int}  # inactive set
-end
+#     # Sets
+#     s::Vector{Int}  # inactive set
+# end
 
-function TCGCache(n::Int, T::DataType=Float64)
-    TCGCache(
-        zeros(T, n),  # d
-        zeros(T, n),  # g 
-        zeros(T, n),  # v
-        zeros(T, n),  # p
-        zeros(T, n),  # Hp
-        zero(T),      # pHp
-        zero(T),      # gp
-        zero(T),      # vv
-        zero(T),      # vv_next
-        zero(T),      # alpha
-        zero(T),      # beta
-        Int[]         # s
-    )
-end
+# function TCGCache(n::Int, T::DataType=Float64)
+#     TCGCache(
+#         zeros(T, n),  # d
+#         zeros(T, n),  # g 
+#         zeros(T, n),  # v
+#         zeros(T, n),  # p
+#         zeros(T, n),  # Hp
+#         zero(T),      # pHp
+#         zero(T),      # gp
+#         zero(T),      # vv
+#         zero(T),      # vv_next
+#         zero(T),      # alpha
+#         zero(T),      # beta
+#         Int[]         # s
+#     )
+# end
 
-function tcg!(cache::TCGCache, H::AbstractMatrix, g::AbstractVector, 
-             Δ::Real, l::AbstractVector, u::AbstractVector,
-             tol::Real, max_iter::Int)
-    fill!(cache.d, 0)
-    copyto!(cache.g, g)
-    copyto!(cache.v, g)
-    copyto!(cache.p, -g)
-    empty!(cache.s)
+# function tcg!(cache::TCGCache, H::AbstractMatrix, g::AbstractVector, 
+#              Δ::Real, l::AbstractVector, u::AbstractVector,
+#              tol::Real, max_iter::Int)
+#     fill!(cache.d, 0)
+#     copyto!(cache.g, g)
+#     copyto!(cache.v, g)
+#     copyto!(cache.p, -g)
+#     empty!(cache.s)
     
-    k = 0
-    touch_bound = false
+#     k = 0
+#     touch_bound = false
     
-    for i in 1:max_iter
-        # Update active set
-        if touch_bound
-            empty!(cache.s)
-            for j in eachindex(cache.d)
-                if (abs(cache.d[j] - l[j]) < tol && cache.g[j] >= 0) || 
-                   (abs(cache.d[j] - u[j]) < tol && cache.g[j] <= 0)
-                    push!(cache.s, j)
-                end
-            end
-        end
+#     for i in 1:max_iter
+#         # Update active set
+#         if touch_bound
+#             empty!(cache.s)
+#             for j in eachindex(cache.d)
+#                 if (abs(cache.d[j] - l[j]) < tol && cache.g[j] >= 0) || 
+#                    (abs(cache.d[j] - u[j]) < tol && cache.g[j] <= 0)
+#                     push!(cache.s, j)
+#                 end
+#             end
+#         end
         
-        # Inactivate bound constraints
-        cache.p[cache.s] .= 0
+#         # Inactivate bound constraints
+#         cache.p[cache.s] .= 0
         
-        # Compute κ = p'Hp
-        mul!(cache.Hp, H, cache.p)
-        cache.pHp = dot(cache.p, cache.Hp)
+#         # Compute κ = p'Hp
+#         mul!(cache.Hp, H, cache.p)
+#         cache.pHp = dot(cache.p, cache.Hp)
         
-        # Check curvature
-        if cache.pHp <= 0
-            σ = (-dot(cache.d, cache.p) + 
-                 sqrt(dot(cache.d, cache.p)^2 + 
-                      dot(cache.p, cache.p)*(Δ^2 - dot(cache.d, cache.d)))) / 
-                 dot(cache.p, cache.p)
+#         # Check curvature
+#         if cache.pHp <= 0
+#             σ = (-dot(cache.d, cache.p) + 
+#                  sqrt(dot(cache.d, cache.p)^2 + 
+#                       dot(cache.p, cache.p)*(Δ^2 - dot(cache.d, cache.d)))) / 
+#                  dot(cache.p, cache.p)
             
-            if any(cache.d + σ*cache.p .<= l)
-                σ = minimum((l .- cache.d) ./ cache.p)
-            elseif any(cache.d + σ*cache.p .>= u)
-                σ = maximum((u .- cache.d) ./ cache.p)
-            end
+#             if any(cache.d + σ*cache.p .<= l)
+#                 σ = minimum((l .- cache.d) ./ cache.p)
+#             elseif any(cache.d + σ*cache.p .>= u)
+#                 σ = maximum((u .- cache.d) ./ cache.p)
+#             end
             
-            @. cache.d += σ * cache.p
-            return cache.d
-        end
+#             @. cache.d += σ * cache.p
+#             return cache.d
+#         end
         
-        # Compute step length
-        cache.alpha = dot(cache.g, cache.v) / cache.pHp
+#         # Compute step length
+#         cache.alpha = dot(cache.g, cache.v) / cache.pHp
         
-        # Check trust region
-        if norm(cache.d + cache.alpha*cache.p) >= Δ
-            σ = (-dot(cache.d, cache.p) + 
-                 sqrt(dot(cache.d, cache.p)^2 + 
-                      dot(cache.p, cache.p)*(Δ^2 - dot(cache.d, cache.d)))) / 
-                 dot(cache.p, cache.p)
-            @. cache.d += σ * cache.p
-            return cache.d
-        end
+#         # Check trust region
+#         if norm(cache.d + cache.alpha*cache.p) >= Δ
+#             σ = (-dot(cache.d, cache.p) + 
+#                  sqrt(dot(cache.d, cache.p)^2 + 
+#                       dot(cache.p, cache.p)*(Δ^2 - dot(cache.d, cache.d)))) / 
+#                  dot(cache.p, cache.p)
+#             @. cache.d += σ * cache.p
+#             return cache.d
+#         end
         
-        # Update solution
-        @. cache.d += cache.alpha * cache.p
-        @. cache.v += cache.alpha * cache.Hp
+#         # Update solution
+#         @. cache.d += cache.alpha * cache.p
+#         @. cache.v += cache.alpha * cache.Hp
         
-        # Check bounds
-        if any(cache.d .<= l) || any(cache.d .>= u)
-            touch_bound = true
-        end
+#         # Check bounds
+#         if any(cache.d .<= l) || any(cache.d .>= u)
+#             touch_bound = true
+#         end
         
-        # Update gradient
-        cache.vv = dot(cache.v, cache.v)
-        if sqrt(cache.vv) < tol
-            return cache.d
-        end
+#         # Update gradient
+#         cache.vv = dot(cache.v, cache.v)
+#         if sqrt(cache.vv) < tol
+#             return cache.d
+#         end
         
-        # Update search direction
-        cache.beta = cache.vv / dot(cache.g, cache.v)
-        copyto!(cache.g, cache.v)
-        @. cache.p = -cache.v + cache.beta * cache.p
+#         # Update search direction
+#         cache.beta = cache.vv / dot(cache.g, cache.v)
+#         copyto!(cache.g, cache.v)
+#         @. cache.p = -cache.v + cache.beta * cache.p
         
-        k += 1
-    end
+#         k += 1
+#     end
     
-    return cache.d
-end
-
-using BenchmarkTools
-
-# Test problem setup
-n = 100
-H = rand(n,n)
-H = H'H  # make symmetric
-g = rand(n)
-Δ = 1.0
-l = fill(-1.0, n)
-u = fill(1.0, n)
-tol = 1e-6
-max_iter = 1000
-
-# Benchmark original
-@btime tcg($H, $g, $Δ, $l, $u, $tol, $max_iter)
-
-# Benchmark with cache 
-cache = TCGCache(n)
-@btime tcg!($cache, $H, $g, $Δ, $l, $u, $tol, $max_iter)
-
-d = tcg(H, g, Δ, l, u, tol, max_iter)
-d_cache = tcg!(cache, H, g, Δ, l, u, tol, max_iter)
+#     return cache.d
+# end

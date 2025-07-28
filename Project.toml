@@ -1,7 +1,7 @@
 name = "nonlinearlstr"
 uuid = "21ca2098-f897-4540-9ab3-b13ed390dd37"
 authors = ["vcantarella <vcantarella@gmail.com> and contributors"]
-version = "1.0.0-DEV"
+version = "0.1.0"
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -9,22 +9,3 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 
 [compat]
 julia = "1.10, 1.11"
-
-[extras]
-ADNLPModels = "54578032-b7ea-4c30-94aa-7cbd1cce6c9a"
-BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-CUTEst = "1b53aba6-35b6-5f92-a507-53c67d53f819"
-ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
-HiGHS = "87dc4568-4c63-4d18-b0c0-bb2238e4078b"
-JSOSolvers = "10dff2fc-5484-5881-a0e0-c90441020f8a"
-NLPModels = "a4795742-8479-5a88-8948-cc11e1c8c1a6"
-NonlinearSolve = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
-OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
-PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
-Roots = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
-SciMLSensitivity = "1ed8b502-d754-442c-8d5d-10ac956f44a1"
-StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-
-[targets]
-test = ["Test", "ADNLPModels", "BenchmarkTools", "CUTEst", "OrdinaryDiffEq", "ForwardDiff", "JSOSolvers", "NLPModels", "NonlinearSolve", "PythonCall", "Roots", "SciMLSensitivity", "StatsPlots", "HiGHS"]

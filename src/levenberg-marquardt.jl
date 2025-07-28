@@ -1,41 +1,33 @@
 using LinearAlgebra
-"""
-Levenberg-Marquardt optimization algorithm
 
 """
+    qr_regularized_solve(J::AbstractMatrix, b::AbstractVector, λ::Real)
 
-function levenberg_marquadt(x, f, J, λ, tol, max_iter)
-    for i in 1:max_iter
-        r = f(x)
-        Jx = J(x)
-        A = Jx'Jx + λ * I
-        b = Jx'r
-        Δx = A\b
-        x += Δx
-        if norm(Δx) < tol
-            break
-        end
-    end
-    return x
-end
+Solve a regularized linear least squares problem using QR decomposition.
 
-function levenberg_marquadtv2(x, f, J, λ, tol, max_iter)
-    for i in 1:max_iter
-        r = f(x)
-        Jx = J(x)
-        Dk = sum(Jk, dims = 1)
-        Dk = diagm(Dk)
-        A = Jx'Jx + λ * Dk
-        b = -Jx'r
-        Δx = A\b
-        x += Δx
-        if norm(Δx) < tol
-            break
-        end
-    end
-    return x
-end
+This function solves the regularized system:
+    min ||Jx - b||² + λ||x||²
 
+by forming and solving the augmented system:
+    [J; √λ I][x] = [b; 0]
+
+# Arguments
+- `J::AbstractMatrix`: The Jacobian matrix (m×n)
+- `b::AbstractVector`: The right-hand side vector (length m)
+- `λ::Real`: Regularization parameter. If λ > 0, Tikhonov regularization is applied
+
+# Returns
+- `x::Vector`: Solution vector of length n
+
+# Details
+When λ > 0, the function creates an augmented system by appending √λ times the 
+identity matrix to J and padding b with zeros. This transforms the regularized 
+problem into a standard least squares problem that can be solved directly.
+
+When λ = 0, the function reduces to solving the unregularized system Jx = b.
+
+# Examples
+"""
 function qr_regularized_solve(J::AbstractMatrix, b::AbstractVector, λ::Real)
     m, n = size(J)
     
@@ -51,13 +43,15 @@ function qr_regularized_solve(J::AbstractMatrix, b::AbstractVector, λ::Real)
     end
     
     # QR factorization of augmented system
-    #qr_aug = qr(J_aug)
-    
     # Solve the system
-    x = J_aug \ b_aug
+    x = J_aug \ b_aug # LinearAlgebra's backslash operator uses QR by default for full rank matrices
     return x
 end
 
+
+"""
+TODO: read the theory and check if this is correct, for now v2 is working.
+"""
 function find_λ!(λ₀, Δ, J, f, maxiters)
     λ = λ₀
     p = zeros(size(J, 2))
@@ -76,7 +70,47 @@ function find_λ!(λ₀, Δ, J, f, maxiters)
     return λ
 end
 
+"""
+    find_λ2!(Δ, J, f, maxiters)
 
+This is the crucial part of the Trust Region - Levenberg-Marquardt algorithm.
+When the Gauss-Newton step does not satisfy the trust region constraint,
+we need to find a regularization parameter λ such that the step p satisfies:
+||p|| ≈ Δ
+
+I first saw this in Nocedal and Wright's book, Numerical Optimization, but this version is based on the 
+thesis: The Levenberg-Marquardt Method and its Implementation in Python. Marius Kaltenbach, 2022.
+
+This is an iterative method that adjusts λ so that the step p is at the radius.
+Just a few iterations should be enough for the algorithm to converge (Nocedal and Wright, 2006)
+ I have put 10 in the main algorithm.
+
+# Arguments
+- `Δ::Real`: Trust region radius (constraint on step norm)
+- `J::AbstractMatrix`: Jacobian matrix 
+- `f::AbstractVector`: Function values/residuals
+- `maxiters::Integer`: Maximum number of iterations
+
+# Returns
+- `λ::Real`: The computed Levenberg-Marquardt parameter
+- `p::AbstractVector`: The computed step vector satisfying the trust region constraint
+
+# Algorithm
+The method maintains lower (`lₖ`) and upper (`uₖ`) bounds on λ and uses:
+1. QR factorization with regularization to solve the linear system
+2. Newton-like updates for λ based on the constraint violation ϕ = ||p|| - Δ
+3. Safeguarding to ensure λ remains within reasonable bounds
+
+# Notes
+- The function modifies internal variables during iteration
+- Prints the final step norm for debugging purposes
+- Uses `qr_regularized_solve` for the regularized linear solve
+
+# References
+- Nocedal, J., & Wright, S. (2006). Numerical Optimization.
+- KALTENBACH, Marius, 2022. The Levenberg-Marquardt Method and 
+    its Implementation in Python [Master thesis]. Konstanz: Universität Konstanz
+"""
 function find_λ2!(Δ, J, f, maxiters)
     l₀ = 0.0
     u₀ = norm(J'f)/Δ
@@ -105,33 +139,3 @@ function find_λ2!(Δ, J, f, maxiters)
     println("Final step norm: ", norm(p))
     return λ, p
 end
-
-function smallest_eigenvalue_JTJ(J::AbstractMatrix; shift=1e-8, max_iter=20)
-    """Approximate smallest eigenvalue of J^T J using shifted inverse iteration"""
-    n = size(J, 2)
-    v = randn(n)
-    v = v / norm(v)
-    
-    # Form J^T J + shift*I for numerical stability
-    JTJ = J' * J
-    JTJ_shifted = JTJ + shift * I(n)
-    
-    try
-        lu_factor = lu(JTJ_shifted)
-        
-        for i in 1:max_iter
-            v_new = lu_factor \ v
-            v_new = v_new / norm(v_new)
-            
-            # Rayleigh quotient for original matrix
-            λ = v_new' * JTJ * v_new
-            v = v_new
-        end
-        
-        return λ
-    catch
-        # Fallback: use pseudo-inverse approach
-        return minimum(svdvals(J))^2
-    end
-end
-

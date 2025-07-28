@@ -70,12 +70,12 @@ ub = [10.0, 10.0, 10.0, 10.0]
 x0 = [rand() * (ub[i] - lb[i]) + lb[i] for i in 1:4]
 cost(x0)
 # Run the optimization
-include("../src/nonlinearlstr.jl")
-opt = nonlinearlstr.bounded_trust_region(cost, grad_cost, hess,x0, lb, ub;step_threshold = 1e-4,
-    initial_radius = 1e0,
- max_iter = 1000, gtol = 1e-8, min_trust_radius = 1e-9, max_trust_radius = 100)
-x = opt[1]
-@show cost(x)
+using nonlinearlstr
+# opt = nonlinearlstr.bounded_trust_region(cost, grad_cost, hess,x0, lb, ub;step_threshold = 1e-4,
+#     initial_radius = 1e0,
+#  max_iter = 1000, gtol = 1e-8, min_trust_radius = 1e-9, max_trust_radius = 100)
+# x = opt[1]
+# @show cost(x)
 
 function resi(x)
     problem = ODEProblem(lotka_volterra!, u0, tspan, x)
@@ -100,45 +100,36 @@ x_p = res[1]
 
 using NonlinearSolve
 res_2(x, p) = resi(x)
-nlls_prob = NonlinearProblem(res_2, x0)
-nlls_sol = solve(nlls_prob, TrustRegion(initial_trust_radius = 0.01);
-     maxiters = 1000, show_trace = Val(true),
-trace_level = NonlinearSolve.TraceWithJacobianConditionNumber(25))
+nlls_prob = NonlinearLeastSquaresProblem(res_2, x0)
+nlls_sol = solve(nlls_prob, TrustRegion();
+    maxiters = 100, show_trace = Val(true),
+    trace_level = NonlinearSolve.TraceWithJacobianConditionNumber(25))
 p_nl = nlls_sol.u
 @show cost(p_nl)
 
-opt_nls = nonlinearlstr.nlss_bounded_trust_region(resi, jac, x0, lb, ub;step_threshold = 1e-5,
-    initial_radius = 1e0,
- max_iter = 1000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 1000)
+
+# opt_nls = nonlinearlstr.nlss_bounded_trust_region(resi, jac, x0, lb, ub;step_threshold = 1e-5,
+#     initial_radius = 1e0,
+#  max_iter = 1000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 1000)
 
 # Test the new QR-based solver
-opt_qr = nonlinearlstr.qr_nlss_bounded_trust_region(resi, jac, x0, lb, ub;
+opt_qr = nonlinearlstr.qr_nlss_bounded_trust_region(resi, jac, x0, repeat([-Inf], length(x0)), repeat([Inf], length(x0));
     initial_radius = 1e0,
-    max_iter = 1000, gtol = 1e-15, min_trust_radius = 1e-12, max_trust_radius = 1000)
+    max_iter = 100, gtol = 1e-8, min_trust_radius = 1e-8, max_trust_radius = 1000)
 
-x = opt_nls[1]
-@show cost(x)
+# x = opt_nls[1]
+# @show cost(x)
 x_qr = opt_qr[1]
 @show cost(x_qr)
-println("QR solver vs old solver cost ratio: ", cost(x_qr) / cost(x))
+println("QR solver vs old solver cost ratio: ", cost(x_qr) / cost(x0))
 function hess_approx(x) 
     J = jac(x)
     QR = qr(J)
-    return QR.R' * QR.R
+    return 4 * QR.R' * QR.R
 end
-opt_v2 = nonlinearlstr.bounded_trust_region(cost, grad_cost,hess_approx ,x0, lb, ub;step_threshold = 1e-5,
+opt_v2 = nonlinearlstr.bounded_trust_region(cost, grad_cost,hess_approx ,x0, repeat([-Inf], length(x0)), repeat([Inf], length(x0));
+    step_threshold = 1e-5,
     initial_radius = 1e0,
- max_iter = 1000, gtol = 1e-8, min_trust_radius = 1e-6, max_trust_radius = 100)
+ max_iter = 100, gtol = 1e-8, min_trust_radius = 1e-6, max_trust_radius = 100)
 x_v2 = opt_v2[1]
-cost(x_v2)
-
-using PythonCall
-
-scipy = pyimport("scipy.optimize")
-
-pyls = scipy.least_squares(resi, x0, jac=jac, bounds=(lb, ub), verbose=2)
-x_py = pyconvert(Vector, pyls.x)
-cost(x_py)
-cost(x0)
-# Setup the ODE problem, then solve
-
+@show cost(x_v2)

@@ -35,12 +35,6 @@ u2 = [ux[2] for ux in u]
 u_noisy1 = u1 + σ1 .* randn(size(u))
 u_noisy2 = u2 + σ2 .* randn(size(u))
 
-# Plot the solution
-using Plots
-plot(sol; linewidth = 3)
-scatter!(tsteps, u_noisy1, yerror = σ1, label = "x noisy", color = :red)
-scatter!(tsteps, u_noisy2, yerror = σ2, label = "y noisy", color = :blue)
-
 # Define the cost function
 function cost(p)
     prob = ODEProblem(lotka_volterra!, u0, tspan, p)

@@ -7,7 +7,7 @@ Solve the Gauss-Newton step: J^T J δ = -J^T r using QR factorization.
 This is more stable than forming J^T J explicitly.
 """
 function solve_gauss_newton(J, r::AbstractVector)
-    δ = J \ (-r)  # Solve J δ = -r directly for full rank (implemented as QR by default)
+    δ = qr(J, ColumnNorm()) \ (-r)  # Solve J δ = -r directly for full rank (implemented as QR by default)
     return δ
 end
 

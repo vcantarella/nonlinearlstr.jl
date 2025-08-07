@@ -1,70 +1,59 @@
-using CUTEst
-using NLPModels
-using JSOSolvers
-using PRIMA
-using NonlinearSolve
+using NLSProblems, NLPModels, LinearAlgebra, Statistics, Random, ForwardDiff
+using PRIMA, NonlinearSolve, JSOSolvers
 using Pkg, Revise
 using DataFrames, CSV, CairoMakie
-using LinearAlgebra, Statistics
 
 Pkg.develop(PackageSpec(path="/Users/vcantarella/.julia/dev/nonlinearlstr"))
 using nonlinearlstr
 
-function find_cutest_nlls_problems(max_vars=50)
-    """Find CUTEst nonlinear least squares problems with obj='none' (residual form)"""
+function find_nlls_problems(max_vars=50)
+    """Find NLS problems from NLSProblems.jl package"""
     
-    # Find problems with objective="none" (these are NLLS problems)
-    nlls_problems = CUTEst.select_sif_problems(objtype="none", max_var=max_vars)
+    # Get all available NLS problems
+    all_problems = setdiff(names(NLSProblems), [:NLSProblems])
     
-    # Test which ones actually have residuals
     valid_problems = []
     
-    for prob_name in nlls_problems
-        try
-            nlp = CUTEstModel(prob_name)
+    for prob_name in all_problems
+            prob = eval(prob_name)()
             
-            # Check if it has constraints (residuals for NLLS)
-            if nlp.meta.ncon > 0 && nlp.meta.nvar <= max_vars
+            # Filter by size and check if it's a valid NLS problem
+            if !unconstrained(prob)
+                println("  Problem $prob_name is constrained, skipping")
+                finalize(prob)
+                continue
+            elseif prob.meta.nvar <= max_vars #&& 
+               #prob.meta.nequ > 0 &&  # Has residuals
+               isa(prob, AbstractNLSModel)
+                
                 push!(valid_problems, prob_name)
+                finalize(prob)
+            else
+                finalize(prob)
             end
-            
-            finalize(nlp)
-        catch e
-            # Skip problematic instances
-            continue
-        end
     end
     
-    println("Found $(length(valid_problems)) valid NLLS problems")
+    println("Found $(length(valid_problems)) valid NLS problems (≤ $max_vars variables)")
     return valid_problems
 end
 
-function create_cutest_functions(nlp)
-    """Create Julia function wrappers for CUTEst NLLS problem"""
+function create_julia_functions(prob)
+    """Create Julia function wrappers for NLSProblems problem"""
     
-    # Get problem info
-    n = nlp.meta.nvar
-    m = nlp.meta.ncon  # Number of residuals (constraints in NLLS formulation)
-    x0 = copy(nlp.meta.x0)
-    lb = copy(nlp.meta.lvar)
-    ub = copy(nlp.meta.uvar)
+    # Get problem infor
+    #m = prob.meta.nequ  # Number of residuals
+    x0 = copy(prob.meta.x0)
+    bl = copy(prob.meta.lvar)
+    bu = copy(prob.meta.uvar)
     
-    # For CUTEst NLLS problems with objtype="none", the residuals are the constraints
-    residual_func(x) = NLPModels.cons(nlp, x)
-    jacobian_func(x) = Matrix(NLPModels.jac(nlp, x))
+    # Define functions using NLPModels interface
+    residual_func(x) = residual(prob, x)
+    jacobian_func(x) = Matrix(jac_residual(prob, x))
+    n,m = size(jacobian_func(x0))
     
-    # The objective for NLLS is usually 0.5 * ||r(x)||²
-    # But for objtype="none", we need to compute it from residuals
-    obj_func(x) = begin
-        r = residual_func(x)
-        return 0.5 * dot(r, r)
-    end
-    
-    grad_func(x) = begin
-        r = residual_func(x)
-        J = jacobian_func(x)
-        return J' * r
-    end
+    # Create objective as 0.5 * ||r||²
+    obj_func(x) = obj(prob, x)
+    grad_func(x) = grad(prob, x)
     
     # Use Gauss-Newton approximation for Hessian
     hess_func(x) = begin
@@ -73,27 +62,27 @@ function create_cutest_functions(nlp)
     end
     
     return (
-        n=n, m=m, x0=x0, lb=lb, ub=ub,
+        n=n, m=m, x0=x0, bl=bl, bu=bu,
         residual_func=residual_func,
         jacobian_func=jacobian_func,
         obj_func=obj_func,
         grad_func=grad_func,
         hess_func=hess_func,
-        name=nlp.meta.name
+        name=prob.meta.name
     )
 end
 
-function test_solver_on_cutest_problem(solver_name, solver_func, prob_data, nlp, max_iter=100)
-    """Test a single solver on a CUTEst problem"""
+function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_iter=100)
+    """Test a single solver on a problem"""
     
     try
         start_time = time()
         
-        if solver_name in ["QR-NLLS", "QR-NLLS-scaled"]
+        if solver_name in ["QR-NLLS", "Standard-NLLS", "QR-NLLS-scaled"]
             # Use residual-Jacobian interface
             result = solver_func(
                 prob_data.residual_func, prob_data.jacobian_func, 
-                prob_data.x0, prob_data.lb, prob_data.ub;
+                prob_data.x0, prob_data.bl, prob_data.bu;
                 max_iter=max_iter, gtol=1e-6
             )
             x_opt, r_opt, g_opt, iterations = result
@@ -104,7 +93,7 @@ function test_solver_on_cutest_problem(solver_name, solver_func, prob_data, nlp,
             # Use objective-gradient-hessian interface
             result = solver_func(
                 prob_data.obj_func, prob_data.grad_func, prob_data.hess_func,
-                prob_data.x0, prob_data.lb, prob_data.ub;
+                prob_data.x0, prob_data.bl, prob_data.bu;
                 max_iter=max_iter, gtol=1e-6
             )
             x_opt, final_obj, g_opt, iterations = result
@@ -116,10 +105,10 @@ function test_solver_on_cutest_problem(solver_name, solver_func, prob_data, nlp,
                 result = PRIMA.newuoa(prob_data.obj_func, prob_data.x0; maxfun=max_iter)
             else
                 # Check if problem has finite bounds
-                has_bounds = any(prob_data.lb .> -1e20) || any(prob_data.ub .< 1e20)
+                has_bounds = any(prob_data.bl .> -1e20) || any(prob_data.bu .< 1e20)
                 if has_bounds
                     result = PRIMA.bobyqa(prob_data.obj_func, prob_data.x0; 
-                                        xl=prob_data.lb, xu=prob_data.ub, maxfun=max_iter)
+                                        xl=prob_data.bl, xu=prob_data.bu, maxfun=max_iter)
                 else
                     # Use large bounds if none specified
                     large_bounds = 1e3
@@ -143,11 +132,11 @@ function test_solver_on_cutest_problem(solver_name, solver_func, prob_data, nlp,
             prob_nl = NonlinearLeastSquaresProblem(nl_func, prob_data.x0)
             
             if solver_name == "NL-TrustRegion"
-                sol = solve(prob_nl, TrustRegion(); maxiters=max_iter, abstol=1e-6)
+                sol = solve(prob_nl, TrustRegion(); maxiters=max_iter)
             elseif solver_name == "NL-LevenbergMarquardt"
-                sol = solve(prob_nl, LevenbergMarquardt(); maxiters=max_iter, abstol=1e-6)
+                sol = solve(prob_nl, LevenbergMarquardt(); maxiters=max_iter)
             else  # Gauss-Newton
-                sol = solve(prob_nl, GaussNewton(); maxiters=max_iter, abstol=1e-6)
+                sol = solve(prob_nl, GaussNewton(); maxiters=max_iter)
             end
             
             x_opt = sol.u
@@ -157,8 +146,9 @@ function test_solver_on_cutest_problem(solver_name, solver_func, prob_data, nlp,
             converged = SciMLBase.successful_retcode(sol)
             
         elseif solver_name == "TRON"
-            # Use JSOSolvers TRON - directly use the nlp object
-            stats = tron(nlp, max_iter=max_iter, atol=1e-6)
+            # Use JSOSolvers TRON
+            # Create a simple NLPModel wrapper
+            stats = tron(prob, max_iter=max_iter)
             
             x_opt = stats.solution
             final_obj = prob_data.obj_func(x_opt)
@@ -167,8 +157,9 @@ function test_solver_on_cutest_problem(solver_name, solver_func, prob_data, nlp,
             converged = stats.status == :first_order
 
         elseif solver_name == "TRUNK"
-            # Use JSOSolvers TRUNK - directly use the nlp object
-            stats = trunk(nlp, max_iter=max_iter, atol=1e-6)
+            # Use JSOSolvers TRUNK
+            # Create a simple NLPModel wrapper
+            stats = trunk(prob, max_iter=max_iter)
             
             x_opt = stats.solution
             final_obj = prob_data.obj_func(x_opt)
@@ -181,7 +172,7 @@ function test_solver_on_cutest_problem(solver_name, solver_func, prob_data, nlp,
         end
         
         elapsed_time = time() - start_time
-        bounds_satisfied = all(prob_data.lb .<= x_opt .<= prob_data.ub)
+        bounds_satisfied = all(prob_data.bl .<= x_opt .<= prob_data.bu)
         
         return (
             solver = solver_name,
@@ -211,16 +202,17 @@ function test_solver_on_cutest_problem(solver_name, solver_func, prob_data, nlp,
     end
 end
 
-function cutest_nlls_benchmark(max_problems=10, max_iter=100)
-    """Run comprehensive benchmark on CUTEst NLLS problems"""
+function nlsproblems_benchmark(max_problems=20, max_iter=100)
+    """Run comprehensive benchmark on NLSProblems.jl problems"""
     
-    # Find NLLS problems
-    problem_names = find_cutest_nlls_problems(200)
+    # Find NLS problems
+    problem_names = find_nlls_problems(200)
     
     # Define solvers to test
     solvers = [
         ("QR-NLLS", nonlinearlstr.qr_nlss_bounded_trust_region),
         ("QR-NLLS-scaled", nonlinearlstr.qr_nlss_bounded_trust_region_v2),
+        ("Trust-Region", nonlinearlstr.bounded_trust_region),
         ("PRIMA-NEWUOA", nothing),  # Special handling
         ("PRIMA-BOBYQA", nothing),  # Special handling
         ("NL-TrustRegion", nothing),  # Special handling
@@ -238,17 +230,17 @@ function cutest_nlls_benchmark(max_problems=10, max_iter=100)
         
         try
             # Create problem instance
-            nlp = CUTEstModel(prob_name)
+            prob = eval(prob_name)()
             
             # Create Julia functions
-            prob_data = create_cutest_functions(nlp)
+            prob_data = create_julia_functions(prob)
             
             println("  Variables: $(prob_data.n)")
             println("  Residuals: $(prob_data.m)")
             
             # Check if problem has bounds
-            has_lower_bounds = any(prob_data.lb .> -1e20)
-            has_upper_bounds = any(prob_data.ub .< 1e20)
+            has_lower_bounds = any(prob_data.bl .> -1e20)
+            has_upper_bounds = any(prob_data.bu .< 1e20)
             println("  Lower bounds: $has_lower_bounds")
             println("  Upper bounds: $has_upper_bounds")
             
@@ -258,7 +250,13 @@ function cutest_nlls_benchmark(max_problems=10, max_iter=100)
             # Skip if initial objective is too large (likely unbounded)
             if initial_obj > 1e10
                 println("  Skipping - initial objective too large")
-                finalize(nlp)
+                finalize(prob)
+                continue
+            end
+
+            if !unconstrained(prob)
+                println("  Problem is constrained - skipping")
+                finalize(prob)
                 continue
             end
             
@@ -267,7 +265,7 @@ function cutest_nlls_benchmark(max_problems=10, max_iter=100)
             for (solver_name, solver_func) in solvers
                 print("    Testing $solver_name... ")
                 
-                result = test_solver_on_cutest_problem(solver_name, solver_func, prob_data, nlp, max_iter)
+                result = test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_iter)
                 
                 if result.success && result.converged
                     println("✓ obj=$(round(result.final_objective, digits=8)), iters=$(result.iterations)")
@@ -292,14 +290,10 @@ function cutest_nlls_benchmark(max_problems=10, max_iter=100)
             append!(results, problem_results)
             
             # Clean up
-            finalize(nlp)
+            finalize(prob)
             
         catch e
             println("  Error with $prob_name: $e")
-            try
-                finalize(nlp)
-            catch
-            end
             continue
         end
     end
@@ -307,8 +301,8 @@ function cutest_nlls_benchmark(max_problems=10, max_iter=100)
     return results
 end
 
-function analyze_cutest_results(results)
-    """Analyze and visualize CUTEst benchmark results"""
+function analyze_nlsproblems_results(results)
+    """Analyze and visualize NLSProblems benchmark results"""
     
     # Convert to DataFrame
     df = DataFrame(results)
@@ -347,7 +341,7 @@ function analyze_cutest_results(results)
     end
     
     println("\n" * "="^80)
-    println("CUTEST NLLS BENCHMARK RESULTS")
+    println("NLSPROBLEMS.JL BENCHMARK RESULTS")
     println("="^80)
     
     # Overall statistics
@@ -468,13 +462,13 @@ function analyze_cutest_results(results)
         end
     end
     
-    CSV.write("cutest_nlls_results.csv", df_with_success)
-    println("\nResults saved to cutest_nlls_results.csv")
+    CSV.write("nlsproblems_results.csv", df_with_success)
+    println("\nResults saved to nlsproblems_results.csv")
     
     return df_with_success
 end
 
-function plot_cutest_performance(df)
+function plot_nlsproblems_performance(df)
     """Create performance plots showing fraction of problems solved vs time (only truly successful runs)"""
     
     # Filter for truly successful runs only
@@ -568,7 +562,7 @@ function plot_cutest_performance(df)
     
     # Set y-axis limits
     ylims!(ax1, 0, 1.05)
-    axislegend!(ax1, position=:rb)
+    axislegend(ax1, position=:rb)
     
     # Bar chart of success rates - Fix: Make sure we don't exceed color array bounds
     n_solvers = length(solvers)
@@ -591,25 +585,25 @@ function plot_cutest_performance(df)
         end
     end
     
-    save("cutest_nlls_performance.png", fig)
+    save("nlsproblems_performance_analysis.png", fig)
     display(fig)
     return fig
 end
 
 # Run the benchmark
-println("Starting CUTEst NLLS benchmark...")
-results = cutest_nlls_benchmark(15, 200)  # Test 15 problems, max 200 iterations
+println("Starting NLSProblems.jl benchmark...")
+results = nlsproblems_benchmark(400, 200)  # Test 15 problems, max 200 iterations
 
 # Analyze results
 if !isempty(results)
-    df_results = analyze_cutest_results(results)
+    df_results = analyze_nlsproblems_results(results)
     
     # Create performance plots
-    fig = plot_cutest_performance(df_results)
+    fig = plot_nlsproblems_performance(df_results)
     
-    println("\nCUTEst benchmark complete!")
-    println("Results saved to cutest_nlls_results.csv")
-    println("Performance plots saved to cutest_nlls_performance.png")
+    println("\nBenchmark complete!")
+    println("Results saved to nlsproblems_results.csv")
+    println("Performance plots saved to nlsproblems_performance_profile.png")
 else
     println("No results to analyze")
 end

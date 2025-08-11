@@ -47,6 +47,25 @@ function qr_regularized_solve(J::AbstractMatrix, b::AbstractVector, λ::Real)
     return x
 end
 
+function qr_regularized_solve_scaled(J::AbstractMatrix, D::AbstractMatrix, b::AbstractVector, λ::Real)
+    m, n = size(J)
+    
+    # Form augmented system: [J; √λ I][x] = [b; 0]
+    if λ > 0
+        # Augmented matrix is [J; √λ I]
+        J_aug = [J; √λ * D]
+        b_aug = [b; zeros(n)]
+    else
+        J_aug = J
+        b_aug = b
+    end
+    
+    # QR factorization of augmented system
+    # Solve the system
+    x = J_aug \ b_aug # LinearAlgebra's backslash operator uses QR by default for full rank matrices
+    return x
+end
+
 # A new function to solve for dp/dλ using the same QR factorization approach
 # Note: It is more efficient to pass the QR factorization object itself,
 # but for clarity, we can re-factorize inside.
@@ -70,6 +89,25 @@ function solve_for_dp_dlambda(J::AbstractMatrix, p::AbstractVector, λ::Real)
     
     # In Julia, this is easily expressed as:
     dp_dλ = UpperTriangular(R) \ (LowerTriangular(R') \ -p)
+    return dp_dλ
+end
+
+function solve_for_dp_dlambda_scaled(J::AbstractMatrix, p::AbstractVector, λ::Real, D::AbstractMatrix)
+    n = size(J,2)
+    # Form the augmented matrix, just like before
+    J_aug = [J; √λ * D]
+    
+    # Perform the QR factorization to get the factors explicitly
+    Q, R = qr(J_aug)
+    rhs = -(D'D)*p
+
+    # Now solve (RᵀR) * (dp/dλ) = -p
+    # This is done in two steps:
+    # 1. Rᵀz = -p  =>  z = Rᵀ \ -p
+    # 2. R(dp/dλ) = z  =>  dp/dλ = R \ z
+    
+    # In Julia, this is easily expressed as:
+    dp_dλ = UpperTriangular(R) \ (LowerTriangular(R') \ rhs)
     return dp_dλ
 end
 
@@ -163,15 +201,12 @@ The method maintains lower (`lₖ`) and upper (`uₖ`) bounds on λ and uses:
 function find_λ!(Δ, J, f, maxiters, θ=1e-4)
     l₀ = 0.0
     u₀ = norm(J'f)/Δ
-    λ₀ = maximum([1e-3*u₀,√(l₀*u₀)])
+    λ₀ = max(1e-3*u₀,√(l₀*u₀))
     λ = λ₀
     uₖ = u₀
     lₖ = l₀
     p = zeros(size(J, 2))
     for i in 1:maxiters
-        if !(uₖ < λ <= lₖ)
-            λ = maximum([1e-3*uₖ,√(lₖ*uₖ)])
-        end
         p = qr_regularized_solve(J, -f, λ)
         if (1-θ)*Δ < norm(p) < (1+θ)*Δ
             break
@@ -179,12 +214,46 @@ function find_λ!(Δ, J, f, maxiters, θ=1e-4)
         ϕ = norm(p)-Δ
         if ϕ < 0
             uₖ = λ
+        else
+            lₖ = λ
         end
         dpdλ = solve_for_dp_dlambda(J, p, λ)
         λ = λ - (norm(p)-Δ)/Δ*(p'p)/(p'dpdλ)
-        lₖ = maximum([lₖ, λ])
+        if !(uₖ < λ <= lₖ)
+            λ = max(lₖ+0.01*(uₖ-lₖ),√(lₖ*uₖ))
+        end
+        #lₖ = maximum([lₖ, λ])
     end
     println("Final step norm: ", norm(p))
+    return λ, p
+end
+
+function find_λ_scaled!(Δ, J, D, f, maxiters, θ=1e-4)
+    l₀ = 0.0
+    u₀ = norm(D*J'f)/Δ
+    λ₀ = max(1e-3*u₀,√(l₀*u₀))
+    λ = λ₀
+    uₖ = u₀
+    lₖ = l₀
+    p = zeros(size(J, 2))
+    for i in 1:maxiters
+        p = qr_regularized_solve_scaled(J, D, -f, λ)
+        if (1-θ)*Δ < norm(D*p) < (1+θ)*Δ
+            break
+        end
+        ϕ = norm(D*p)-Δ
+        if ϕ < 0
+            uₖ = λ
+        else
+            lₖ = λ
+        end
+        dpdλ = solve_for_dp_dlambda_scaled(J, p, λ, D)
+        λ = λ - (norm(D*p)-Δ)/Δ*((D*p)'*(D*p)/(p'*D'*(D*dpdλ)))
+        if !(uₖ < λ <= lₖ)
+            λ = max(lₖ+0.01*(uₖ-lₖ),√(lₖ*uₖ))
+        end
+    end
+    println("Final step norm: ", norm(D*p))
     return λ, p
 end
 

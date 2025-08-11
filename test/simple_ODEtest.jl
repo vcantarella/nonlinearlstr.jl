@@ -50,7 +50,7 @@ u_noisy2 = u2 + σ2 .* randn(size(u))
 function residuals(x)
     problem = ODEProblem(lotka_volterra!, u0, tspan, x)
     sol = solve(problem, Rosenbrock23(); saveat = tsteps,
-     reltol = 1e-9, abstol = 1e-9, maxiters = 10000)
+    reltol = 1e-9, abstol = 1e-9, maxiters = 10000)
     u = sol.u
     u1 = [ux[1] for ux in u]
     u2 = [ux[2] for ux in u]
@@ -72,13 +72,13 @@ ub = [10.0, 10.0, 10.0, 10.0]
 x0 = [1, 1.5, 2, 0.5]
 cost_x0 = 0.5 * dot(residuals(x0), residuals(x0))
 
-# Running the qr_nlss_bounded_trust_region solver
-a_opt, f_opt, g_opt, iter = nonlinearlstr.qr_nlss_bounded_trust_region(
-    residuals, jac, x0, repeat([-Inf], inner=length(x0)), repeat([Inf], inner=length(x0));
+# Running the lm_trust_region solver
+a_opt, f_opt, g_opt, iter = nonlinearlstr.lm_trust_region(
+    residuals, jac, x0;
     max_iter = 100, gtol = 1e-8
 )
 
-converged = norm(g_opt, Inf) < 1e-4
+converged = norm(g_opt, 2) < 1e-8
 bounds_satisfied = all(lb .<= a_opt .<= ub)
 parameter_error = norm(a_opt - p)
 cost = 0.5 * dot(f_opt, f_opt)  # Cost function value
@@ -99,10 +99,10 @@ result_qr = (
 )
 push!(results, result_qr)
 
-# Running the qr_nlss_bounded_trust_region solver
-a_opt, f_opt, g_opt, iter = nonlinearlstr.qr_nlss_bounded_trust_region_v2(
-    residuals, jac, x0, repeat([-Inf], inner=length(x0)), repeat([Inf], inner=length(x0));
-    max_iter = 100, gtol = 1e-8
+# Running the lm_trust_region solver
+a_opt, f_opt, g_opt, iter = nonlinearlstr.lm_trust_region_scaled(
+    residuals, jac, x0;
+    max_iter = 400, gtol = 1e-8
 )
 
 converged = norm(g_opt, Inf) < 1e-4
@@ -129,7 +129,7 @@ nlprob = NonlinearLeastSquaresProblem(res_nl, x0, p)
 
 nl_solvers = [
     (TrustRegion(), "NonlinearSolve TR"),
-    (LevenbergMarquardt(), "NonlinearSolve LM"),
+    (NonlinearSolve.LevenbergMarquardt(), "NonlinearSolve LM"),
     (FastShortcutNLLSPolyalg(), "NonlinearSolve Polyalg")
 ]
 

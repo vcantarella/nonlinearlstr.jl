@@ -1,5 +1,6 @@
 using CUTEst
 using NLPModels
+using Enlsip
 using NLSProblems
 using JSOSolvers
 using PRIMA
@@ -137,11 +138,11 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
         lb = repeat([-Inf], inner=prob_data.m)
         ub = repeat([Inf], inner=prob_data.m)
         start_time = time()
-        if solver_name in ["QR-NLLS", "QR-NLLS-scaled"]
+        if solver_name in ["QR-NLLS", "QR-NLLS-scaled", "LM-TR", "LM-TR-scaled"]
             # Use residual-Jacobian interface
             result = solver_func(
                 prob_data.residual_func, prob_data.jacobian_func, 
-                prob_data.x0, lb, ub;
+                prob_data.x0;
                 max_iter=max_iter, gtol=1e-6
             )
             x_opt, r_opt, g_opt, iterations = result
@@ -191,6 +192,24 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             converged = res.converged
             final_obj = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)
+        elseif solver_name == "Enlsip"
+
+            model = Enlsip.CnlsModel(prob_data.residual_func, prob_data.n, prob_data.m;
+                                    jacobian_residuals=prob_data.jacobian_func, starting_point=prob_data.x0,
+                                    x_low=lb, x_upp=ub)
+            # Call of the `solve!` function
+            Enlsip.solve!(model)
+            status = Enlsip.get_status(model)
+            println("Algorithm termination status: ", status)
+            println("Optimal solution: ", Enlsip.solution(model))
+            println("Optimal objective value: ", Enlsip.sum_sq_residuals(model))
+
+            #œresult = Enlsip.enlsip(prob_data.residual_func, prob_data.jacobian_func, prob_data.x0; max_iter=max_iter)
+            x_opt = Enlsip.solution(model)
+            final_obj = prob_data.obj_func(x_opt)
+            g_opt = prob_data.grad_func(x_opt)
+            iterations = NaN
+            converged = false
         else
             error("Unknown solver: $solver_name")
         end

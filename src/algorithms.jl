@@ -273,7 +273,7 @@ function nlss_bounded_trust_region(
 end
 
 """
-    qr_nlss_bounded_trust_region(res::Function, jac::Function, x0, lb, ub; kwargs...)
+    qr_nlss_trust_region(res::Function, jac::Function, x0, lb, ub; kwargs...)
 
 QR-based nonlinear least squares solver with bounded trust region method.
 Uses QR factorization for improved numerical stability.
@@ -301,11 +301,11 @@ Uses QR factorization for improved numerical stability.
 # Returns
 - Tuple (x, residuals, gradient, iterations)
 """
-function qr_nlss_bounded_trust_region(
+function qr_nlss_trust_region(
     res::Function, jac::Function,
-    x0::Array{T}, lb::Array{T}, ub::Array{T};
+    x0::Array{T};
     initial_radius::Real = 1.0,
-    max_trust_radius::Real = 100.0,
+    max_trust_radius::Real = 1e12,
     min_trust_radius::Real = 1e-8,
     step_threshold::Real = 0.01,
     shrink_threshold::Real = 0.25,
@@ -316,13 +316,7 @@ function qr_nlss_bounded_trust_region(
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
     τ::Real = 1e-12,
-    # regularization::Real = 0.0,
     ) where T
-
-    # Validate input
-    if any(x0 .< lb) || any(x0 .> ub)
-        error("Initial guess x0 is not within bounds")
-    end
 
     # Initialize
     x = copy(x0)
@@ -332,6 +326,11 @@ function qr_nlss_bounded_trust_region(
     
     cost = 0.5 * dot(f, f)
     g = compute_gradient(J, f)
+
+    if norm(x0) > 1e-4
+        initial_radius = norm(x0)
+    end
+
     
     radius = initial_radius
     
@@ -343,20 +342,117 @@ function qr_nlss_bounded_trust_region(
 
     for iter in 1:max_iter
         # Compute step using QR-based trust region
-        qrls = qr(J, ColumnNorm())
+        #qrls = qr(J)
 
-        δgn = solve_gauss_newton(J, f)
-        δgn = clamp(δgn, lb - x, ub - x)
+        m, n = size(J)
+        δgn, is_rank_deficient, F = solve_gauss_newton_v3(J, f)
+        on_boundary = false
+        λ = 0.0
 
-        if norm(δgn) < radius
-            δ = δgn
+        if m < n
+            # --- UNDERDETERMINED CASE (More parameters than residuals) ---
+            if norm(δgn) <= radius
+                # The minimal-norm step that perfectly fits the model is within the radius.
+                # This is the ideal solution. There is no need to make the step longer.
+                δ = δgn
+                on_boundary = (abs(norm(δgn) - radius) < 1e-9)
+            else
+                # The smallest "perfect" step is too big. We must find a damped
+                # step on the boundary using the standard LM approach.
+                λ, δ = find_λ!(radius, J, f, 100)
+                on_boundary = true
+            end
         else
-            # λ = find_λ!(λ₀, radius, J, f, max_iter)
-            # # println("Iteration: $iter, λ: $λ, radius: $radius")
-            # δ = qr_trust_region_step(J, qrls, f, radius, lb, ub, x; λ=λ)
-            λ, δ = find_λ!(radius, J, f, 100)
-            δ = clamp(δ, lb - x, ub - x)
+            # --- SQUARE OR OVERDETERMINED CASE (m >= n) ---
+            if norm(δgn) <= radius
+                if !is_rank_deficient
+                    # Full rank, standard Gauss-Newton step is optimal.
+                    δ = δgn
+                    on_boundary = (abs(norm(δgn) - radius) < 1e-9)
+                else
+                    # This is the TRUE "Hard Case" for m >= n systems.
+                    on_boundary = true
+                    
+                    # Extract the null space vector from the SVD we already computed.
+                    tol = maximum(size(J)) * eps(F.S[1])
+                    effective_rank = count(s -> s > tol, F.S)
+                    null_space_idx = effective_rank + 1
+                    z = F.V[:, null_space_idx]
+                    
+                    # Solve for α to extend the step to the boundary.
+                    a = dot(z, z)
+                    b = 2 * dot(δgn, z)
+                    c = dot(δgn, δgn) - radius^2
+                    
+                    discriminant = b^2 - 4*a*c
+                    if discriminant < 0
+                        println("Warning: Negative discriminant in hard case. Using GN step.")
+                        δ = δgn # Fallback
+                    else
+                        # Deterministically choose the positive root for α.
+                        α = (-b + sqrt(discriminant)) / (2a)
+                        δ = δgn + α * z
+                    end
+                end
+            else
+                # Standard case: Gauss-Newton step is too long, find damped LM step.
+                λ, δ = find_λ!(radius, J, f, 100)
+                on_boundary = true
+            end
         end
+
+        # δgn, z, hard_case = solve_gauss_newton_v2(J, f)
+        # on_boundary = false
+
+        # if norm(δgn) < radius
+        #     if !hard_case
+        #         δ = δgn
+        #         λ = 0.0
+        #         on_boundary = false
+        #     else #hard case!
+        #         # find α: ||δgn||² + 2α(δgn'z) + α²||z||² = Δ²
+        #         δgn2 = dot(δgn, δgn)
+        #         δgnz = dot(δgn, z)
+        #         z2 = dot(z, z)
+        #         a = z2
+        #         b = 2 * δgnz
+        #         c = δgn2 - radius^2
+        #         # Solve quadratic equation: aα² + bα + c = 0
+        #         discriminant = b^2 - 4a*c
+        #         if discriminant < 0
+        #             println("No valid step found")
+        #             radius *= shrink_factor
+        #             continue
+        #         end
+        #         # α₁ = (-b - sqrt(discriminant)) / (2a)
+        #         α₂ = (-b + sqrt(discriminant)) / (2a)
+        #         # Calculate the two potential steps
+        #         # δ₁ = δgn + α₁ * z
+        #         δ₂ = δgn + α₂ * z
+
+        #         # Evaluate the model at each point
+        #         # Note: g = J'f, and J'Jδ = J'(Jδ)
+        #         # q₁ = -dot(g, δ₁) - 0.5 * dot(J*δ₁, J*δ₁)
+        #         # q₂ = -dot(g, δ₂) - 0.5 * dot(J*δ₂, J*δ₂)
+
+        #         # Choose the step that minimizes the model
+        #         # if q₁ >= q₂
+        #         #     δ = δ₁
+        #         # else
+        #         #     
+        #         # end
+        #         δ = δ₂
+        #         on_boundary = true
+        #     end
+            
+        # else
+        #     # λ = find_λ!(λ₀, radius, J, f, max_iter)
+        #     # # println("Iteration: $iter, λ: $λ, radius: $radius")
+        #     # δ = qr_trust_region_step(J, qrls, f, radius, lb, ub, x; λ=λ)
+        #     λ, δ = find_λ!(radius, J, f, 100)
+        #     on_boundary = true
+        #     # δ = clamp(δ, lb - x, ub - x)
+        # end
         
         if norm(δ) < min_trust_radius
             println("Step size below minimum trust radius")
@@ -372,9 +468,10 @@ function qr_nlss_bounded_trust_region(
         actual_reduction = cost - cost_new
         
         # Predicted reduction using QR factorization
-        # pred = -g'δ - 0.5 δ'(J'J)δ
         Jδ = J * δ
         predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
+        # predicted_reduction = 1/2*norm(Jδ)^2 + λ*norm(δ)^2
+
         #predicted_reduction =  -(0.5 * sk' * Bk * sk + g' * sk)
         
         if predicted_reduction <= 0
@@ -394,7 +491,7 @@ function qr_nlss_bounded_trust_region(
         ρ = actual_reduction / predicted_reduction
         
         # Update trust region radius
-        if ρ >= expand_threshold
+        if (ρ >= expand_threshold) && on_boundary
             radius = min(max_trust_radius, max(radius, expand_factor * norm(δ)))
         elseif ρ < shrink_threshold
             radius *= shrink_factor
@@ -436,6 +533,216 @@ function qr_nlss_bounded_trust_region(
 end
 
 
+function lm_trust_region(
+    res::Function, jac::Function,
+    x0::Array{T};
+    initial_radius::Real = 1.0,
+    max_trust_radius::Real = 1e12,
+    min_trust_radius::Real = 1e-8,
+    step_threshold::Real = 0.01,
+    shrink_threshold::Real = 0.25,
+    expand_threshold::Real = 0.75,
+    shrink_factor::Real = 0.25,
+    expand_factor::Real = 2.0,
+    max_iter::Int = 100,
+    gtol::Real = 1e-6,
+    ftol::Real = 1e-15,
+    τ::Real = 1e-12,
+    ) where T
+
+    # Initialize
+    x = copy(x0)
+    f = res(x)
+    J = jac(x)
+    cost = 0.5 * dot(f, f)
+    g = J' * f
+    if norm(x0) > 1e-4
+        initial_radius = norm(x0)
+    end
+    radius = initial_radius
+    # Check initial convergence
+    if norm(g) < gtol
+        println("Initial guess satisfies gradient tolerance")
+        return x, f, g, 0
+    end
+    #iterations
+    for iter in 1:max_iter
+        # Compute step using QR-based trust region
+        δgn = J \ -f
+        if norm(δgn) <= radius
+            # The minimal-norm step that perfectly fits the model is within the radius.
+            # This is the ideal solution. There is no need to make the step longer.
+            δ = δgn
+            λ = 0.0
+        else
+            # The smallest "perfect" step is too big. We must find a damped
+            # step on the boundary using the standard LM approach.
+            λ, δ = find_λ!(radius, J, f, 100)
+        end
+        # Evaluate new point
+        x_new = x + δ
+        f_new = res(x_new)
+        cost_new = 0.5 * dot(f_new, f_new)
+        # Compute reduction ratio
+        actual_reduction = cost - cost_new
+        # Predicted reduction using QR factorization
+        Jδ = J * δ
+        #predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
+        predicted_reduction = 0.5*dot(Jδ, Jδ)+ λ*dot(δ,δ)
+        if predicted_reduction <= 0 #this potentially means the δ is wrong but we leave some margin
+            println("Non-positive predicted reduction, shrinking radius")
+            radius *= shrink_factor
+            continue
+        end
+        # the reduction ratio
+        ρ = actual_reduction / predicted_reduction
+        # Update trust region radius
+        if (ρ >= expand_threshold) && (λ > 0)
+            radius = min(max_trust_radius, expand_factor * norm(δ))
+        elseif ρ < shrink_threshold
+            radius *= shrink_factor
+        end
+        # Accept or reject step
+        if ρ >= step_threshold
+            x = x_new
+            f = f_new
+            cost = cost_new
+            J = jac(x)
+            g = J' * f
+            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            # Check convergence
+            if norm(g, 2) < gtol
+                println("Gradient convergence criterion reached")
+                return x, f, g, iter
+            end
+            if actual_reduction < ftol * cost
+                println("Function tolerance criterion reached")
+                return x, f, g, iter
+            end
+        else
+            println("Step rejected, ρ = $ρ")
+        end
+        # Check trust region size
+        if radius < min_trust_radius
+            println("Trust region radius below minimum")
+            return x, f, g, iter
+        end        
+    end
+    println("Maximum number of iterations reached")
+    return x, f, g, max_iter
+end
+
+
+
+function lm_trust_region_scaled(
+    res::Function, jac::Function,
+    x0::Array{T};
+    initial_radius::Real = 1.0,
+    max_trust_radius::Real = 1e12,
+    min_trust_radius::Real = 1e-8,
+    step_threshold::Real = 0.01,
+    shrink_threshold::Real = 0.25,
+    expand_threshold::Real = 0.75,
+    shrink_factor::Real = 0.25,
+    expand_factor::Real = 2.0,
+    max_iter::Int = 100,
+    gtol::Real = 1e-6,
+    ftol::Real = 1e-15,
+    τ::Real = 1e-12,
+    ) where T
+
+    # Initialize
+    x = copy(x0)
+    f = res(x)
+    J = jac(x)
+    cost = 0.5 * dot(f, f)
+    g = J' * f
+    if norm(g) < gtol
+        println("Initial guess satisfies gradient tolerance")
+        return x, f, g, 0
+    end
+    m,n = size(J)
+    Dk = Diagonal(ones(eltype(x0), n))
+    column_norms = [norm(J[:, i]) for i in axes(J, 2)]
+    for i in axes(J, 2)
+        Dk[i, i] = max(τ, column_norms[i])
+    end
+    δgn = J \ -f
+    initial_radius = norm(Dk*δgn)
+    radius = initial_radius
+    for iter in 1:max_iter
+        # Compute step using QR-based trust region
+        m, n = size(J)
+        if iter > 1
+            δgn = J \ -f # avoid extra computation
+        end
+        if norm(Dk * δgn) <= radius
+            # The minimal-norm step that perfectly fits the model is within the radius.
+            # This is the ideal solution. There is no need to make the step longer.
+            δ = δgn
+            λ = 0.0
+        else
+            # The smallest "perfect" step is too big. We must find a damped
+            # step on the boundary using the standard LM approach.
+            λ, δ = find_λ_scaled!(radius, J, Dk, f, 100)
+        end
+        # Evaluate new point
+        x_new = x + δ
+        f_new = res(x_new)
+        cost_new = 0.5 * dot(f_new, f_new)
+        # Compute reduction ratio
+        actual_reduction = cost - cost_new
+        # Predicted reduction using QR factorization
+        Jδ = J * δ
+        #predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
+        predicted_reduction = 0.5*dot(Jδ, Jδ)+ λ*dot(Dk * δ, Dk * δ)
+        if predicted_reduction <= 0 #this potentially means the δ is wrong but we leave some margin
+            println("Non-positive predicted reduction, shrinking radius")
+            radius *= shrink_factor
+            continue
+        end
+        # the reduction ratio
+        ρ = actual_reduction / predicted_reduction
+        # Update trust region radius
+        if (ρ >= expand_threshold) && (λ > 0)
+            radius = min(max_trust_radius, expand_factor * norm(δ))
+        elseif ρ < shrink_threshold
+            radius *= shrink_factor
+        end
+        # Accept or reject step
+        if ρ >= step_threshold
+            x = x_new
+            f = f_new
+            cost = cost_new
+            J = jac(x)
+            column_norms = [norm(J[:, i]) for i in axes(J, 2)]
+            for i in axes(J, 2)
+                Dk[i, i] = max(Dk[i, i], column_norms[i])
+            end
+            g = J' * f
+            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            # Check convergence
+            if norm(g, 2) < gtol
+                println("Gradient convergence criterion reached")
+                return x, f, g, iter
+            end
+            if actual_reduction < ftol * cost
+                println("Function tolerance criterion reached")
+                return x, f, g, iter
+            end
+        else
+            println("Step rejected, ρ = $ρ")
+        end
+        # Check trust region size
+        if radius < min_trust_radius
+            println("Trust region radius below minimum")
+            return x, f, g, iter
+        end        
+    end
+    println("Maximum number of iterations reached")
+    return x, f, g, max_iter
+end
+
 """
     qr_nlss_bounded_trust_region(res::Function, jac::Function, x0, lb, ub; kwargs...)
 
@@ -465,9 +772,9 @@ Uses QR factorization for improved numerical stability.
 # Returns
 - Tuple (x, residuals, gradient, iterations)
 """
-function qr_nlss_bounded_trust_region_v2(
+function qr_nlss_trust_region_v2(
     res::Function, jac::Function,
-    x0::Array{T}, lb::Array{T}, ub::Array{T};
+    x0::Array{T};
     initial_radius::Real = 1.0,
     max_trust_radius::Real = 100.0,
     min_trust_radius::Real = 1e-8,
@@ -482,11 +789,6 @@ function qr_nlss_bounded_trust_region_v2(
     τ::Real = 1e-12,
     # regularization::Real = 0.0,
     ) where T
-
-    # Validate input
-    if any(x0 .< lb) || any(x0 .> ub)
-        error("Initial guess x0 is not within bounds")
-    end
 
     # Initialize
     x = copy(x0)
@@ -517,16 +819,16 @@ function qr_nlss_bounded_trust_region_v2(
             D_inv[i, i] = 1 / D[i, i]
         end
         J_scaled = J * D_inv
-        δgn = solve_gauss_newton(J_scaled, f)
+        δgn, hardcase = solve_gauss_newton(J_scaled, f)
         λ = 0.0
         if norm(δgn) < radius
             δgn = D_inv* δgn
-            δgn = clamp(δgn, lb - x, ub - x)
+            #δgn = clamp(δgn, lb - x, ub - x)
             δ = δgn
         else
             λ, δ = find_λ!(radius, J_scaled, f, 100)
             δ = D_inv * δ
-            δ = clamp(δ, lb - x, ub - x)
+            #δ = clamp(δ, lb - x, ub - x)
         end
         
         if norm(δ) < min_trust_radius
@@ -588,6 +890,267 @@ function qr_nlss_bounded_trust_region_v2(
             
             # Check convergence
             if norm(g, Inf) < gtol
+                println("Gradient convergence criterion reached")
+                return x, f, g, iter
+            end
+            
+            if actual_reduction < ftol * cost
+                println("Function tolerance criterion reached")
+                return x, f, g, iter
+            end
+        else
+            println("Step rejected, ρ = $ρ")
+        end
+        
+        # Check trust region size
+        if radius < min_trust_radius
+            println("Trust region radius below minimum")
+            return x, f, g, iter
+        end        
+    end
+    
+    println("Maximum number of iterations reached")
+    return x, f, g, max_iter
+end
+
+
+"""
+    qr_nlss_trust_region(res::Function, jac::Function, x0, lb, ub; kwargs...)
+
+QR-based nonlinear least squares solver with bounded trust region method.
+Uses QR factorization for improved numerical stability.
+
+# Arguments
+- `res::Function`: Residual function r(x) returning vector of residuals
+- `jac::Function`: Jacobian function J(x) returning m×n matrix  
+- `x0::Array`: Initial parameter guess
+- `lb::Array`: Lower bounds
+- `ub::Array`: Upper bounds
+
+# Keyword Arguments
+- `initial_radius::Real = 1.0`: Initial trust region radius
+- `max_trust_radius::Real = 100.0`: Maximum trust region radius
+- `min_trust_radius::Real = 1e-12`: Minimum trust region radius
+- `step_threshold::Real = 0.01`: Threshold for accepting steps
+- `shrink_threshold::Real = 0.25`: Threshold for shrinking radius
+- `expand_threshold::Real = 0.9`: Threshold for expanding radius
+- `shrink_factor::Real = 0.25`: Factor for shrinking radius
+- `expand_factor::Real = 2.0`: Factor for expanding radius
+- `max_iter::Int = 100`: Maximum iterations
+- `gtol::Real = 1e-6`: Gradient tolerance
+- `ftol::Real = 1e-15`: Function tolerance
+
+# Returns
+- Tuple (x, residuals, gradient, iterations)
+"""
+function qr_bounded_nlss_trust_region(
+    res::Function, jac::Function,
+    x0::Array{T};
+    initial_radius::Real = 1.0,
+    max_trust_radius::Real = 1e12,
+    min_trust_radius::Real = 1e-8,
+    step_threshold::Real = 0.01,
+    shrink_threshold::Real = 0.25,
+    expand_threshold::Real = 0.75,
+    shrink_factor::Real = 0.25,
+    expand_factor::Real = 2.0,
+    max_iter::Int = 100,
+    gtol::Real = 1e-6,
+    ftol::Real = 1e-15,
+    τ::Real = 1e-12,
+    ) where T
+
+    # Initialize
+    x = copy(x0)
+    f = res(x)
+    J = jac(x)
+    qrls = qr(J, ColumnNorm())
+    
+    cost = 0.5 * dot(f, f)
+    g = compute_gradient(J, f)
+
+    if norm(x0) > 1e-4
+        initial_radius = norm(x0)
+    end
+
+    
+    radius = initial_radius
+    
+    # Check initial convergence
+    if norm(g, Inf) < gtol
+        println("Initial guess satisfies gradient tolerance")
+        return x, f, g, 0
+    end
+
+    for iter in 1:max_iter
+        # Compute step using QR-based trust region
+        #qrls = qr(J)
+
+        m, n = size(J)
+        δgn, is_rank_deficient, F = solve_gauss_newton_v3(J, f)
+        on_boundary = false
+        λ = 0.0
+
+        if m < n
+            # --- UNDERDETERMINED CASE (More parameters than residuals) ---
+            if norm(δgn) <= radius
+                # The minimal-norm step that perfectly fits the model is within the radius.
+                # This is the ideal solution. There is no need to make the step longer.
+                δ = δgn
+                on_boundary = (abs(norm(δgn) - radius) < 1e-9)
+            else
+                # The smallest "perfect" step is too big. We must find a damped
+                # step on the boundary using the standard LM approach.
+                λ, δ = find_λ!(radius, J, f, 100)
+                on_boundary = true
+            end
+        else
+            # --- SQUARE OR OVERDETERMINED CASE (m >= n) ---
+            if norm(δgn) <= radius
+                if !is_rank_deficient
+                    # Full rank, standard Gauss-Newton step is optimal.
+                    δ = δgn
+                    on_boundary = (abs(norm(δgn) - radius) < 1e-9)
+                else
+                    # This is the TRUE "Hard Case" for m >= n systems.
+                    on_boundary = true
+                    
+                    # Extract the null space vector from the SVD we already computed.
+                    tol = maximum(size(J)) * eps(F.S[1])
+                    effective_rank = count(s -> s > tol, F.S)
+                    null_space_idx = effective_rank + 1
+                    z = F.V[:, null_space_idx]
+                    
+                    # Solve for α to extend the step to the boundary.
+                    a = dot(z, z)
+                    b = 2 * dot(δgn, z)
+                    c = dot(δgn, δgn) - radius^2
+                    
+                    discriminant = b^2 - 4*a*c
+                    if discriminant < 0
+                        println("Warning: Negative discriminant in hard case. Using GN step.")
+                        δ = δgn # Fallback
+                    else
+                        # Deterministically choose the positive root for α.
+                        α = (-b + sqrt(discriminant)) / (2a)
+                        δ = δgn + α * z
+                    end
+                end
+            else
+                # Standard case: Gauss-Newton step is too long, find damped LM step.
+                λ, δ = find_λ!(radius, J, f, 100)
+                on_boundary = true
+            end
+        end
+
+        # δgn, z, hard_case = solve_gauss_newton_v2(J, f)
+        # on_boundary = false
+
+        # if norm(δgn) < radius
+        #     if !hard_case
+        #         δ = δgn
+        #         λ = 0.0
+        #         on_boundary = false
+        #     else #hard case!
+        #         # find α: ||δgn||² + 2α(δgn'z) + α²||z||² = Δ²
+        #         δgn2 = dot(δgn, δgn)
+        #         δgnz = dot(δgn, z)
+        #         z2 = dot(z, z)
+        #         a = z2
+        #         b = 2 * δgnz
+        #         c = δgn2 - radius^2
+        #         # Solve quadratic equation: aα² + bα + c = 0
+        #         discriminant = b^2 - 4a*c
+        #         if discriminant < 0
+        #             println("No valid step found")
+        #             radius *= shrink_factor
+        #             continue
+        #         end
+        #         # α₁ = (-b - sqrt(discriminant)) / (2a)
+        #         α₂ = (-b + sqrt(discriminant)) / (2a)
+        #         # Calculate the two potential steps
+        #         # δ₁ = δgn + α₁ * z
+        #         δ₂ = δgn + α₂ * z
+
+        #         # Evaluate the model at each point
+        #         # Note: g = J'f, and J'Jδ = J'(Jδ)
+        #         # q₁ = -dot(g, δ₁) - 0.5 * dot(J*δ₁, J*δ₁)
+        #         # q₂ = -dot(g, δ₂) - 0.5 * dot(J*δ₂, J*δ₂)
+
+        #         # Choose the step that minimizes the model
+        #         # if q₁ >= q₂
+        #         #     δ = δ₁
+        #         # else
+        #         #     
+        #         # end
+        #         δ = δ₂
+        #         on_boundary = true
+        #     end
+            
+        # else
+        #     # λ = find_λ!(λ₀, radius, J, f, max_iter)
+        #     # # println("Iteration: $iter, λ: $λ, radius: $radius")
+        #     # δ = qr_trust_region_step(J, qrls, f, radius, lb, ub, x; λ=λ)
+        #     λ, δ = find_λ!(radius, J, f, 100)
+        #     on_boundary = true
+        #     # δ = clamp(δ, lb - x, ub - x)
+        # end
+        
+        if norm(δ) < min_trust_radius
+            println("Step size below minimum trust radius")
+            return x, f, g, iter
+        end
+        
+        # Evaluate new point
+        x_new = x + δ
+        f_new = res(x_new)
+        cost_new = 0.5 * dot(f_new, f_new)
+        
+        # Compute reduction ratio
+        actual_reduction = cost - cost_new
+        
+        # Predicted reduction using QR factorization
+        Jδ = J * δ
+        predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
+        # predicted_reduction = 1/2*norm(Jδ)^2 + λ*norm(δ)^2
+
+        #predicted_reduction =  -(0.5 * sk' * Bk * sk + g' * sk)
+        
+        if predicted_reduction <= 0
+            if actual_reduction > ftol*cost
+                x = x_new
+                f = f_new
+                cost = cost_new
+                J = jac(x)
+                g = compute_gradient(J, f)
+            else
+                println("Non-positive predicted reduction, shrinking radius")
+                radius *= shrink_factor
+            end
+            continue
+        end
+        
+        ρ = actual_reduction / predicted_reduction
+        
+        # Update trust region radius
+        if (ρ >= expand_threshold) && on_boundary
+            radius = min(max_trust_radius, max(radius, expand_factor * norm(δ)))
+        elseif ρ < shrink_threshold
+            radius *= shrink_factor
+        end
+        
+        # Accept or reject step
+        if ρ >= step_threshold
+            x = x_new
+            f = f_new
+            cost = cost_new
+            J = jac(x)
+            g = compute_gradient(J, f)
+            
+            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            
+            # Check convergence
+            if norm(g, 2) < gtol
                 println("Gradient convergence criterion reached")
                 return x, f, g, iter
             end

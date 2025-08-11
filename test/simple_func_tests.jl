@@ -38,12 +38,12 @@ function create_nonlinearls_test(test_algorithm, ex::Int; kwargs...)
         error("Unknown example number")
     end
     # Generate noisy data
-    Random.seed!(123)
+    #Random.seed!(123)
     t = 0.0:1:100  # Time points
     y_clean = f(t, a_true)
-    noise_level = 0.05  # Noise level
-    noise = noise_level * randn(length(y_clean)) * mean(y_clean)
-    y_data = y_clean + noise
+    #noise_level = 0.05  # Noise level
+    #noise = noise_level * randn(length(y_clean)) * mean(y_clean)
+    y_data = y_clean #+ noise
     residual_func(a) = y_data-f(t,a)
     jac_func(a) = ForwardDiff.jacobian(residual_func, a)
     lb = repeat([-Inf], inner=4)
@@ -51,7 +51,7 @@ function create_nonlinearls_test(test_algorithm, ex::Int; kwargs...)
     f_true = residual_func(a_true)
     cost_true = 0.5 * dot(f_true, f_true)  # True cost value
     if test_algorithm != nonlinearlstr.bounded_trust_region
-        result = test_algorithm(residual_func, jac_func, a0, lb, ub; kwargs...)
+        result = test_algorithm(residual_func, jac_func, a0; kwargs...)
         a_opt, f_opt, g_opt, iter = result
         # Basic convergence tests
         converged = norm(g_opt, Inf) < 1e-4
@@ -91,8 +91,8 @@ end
     
     # Test both solvers on all three examples
     solvers = [
-        (nonlinearlstr.qr_nlss_bounded_trust_region, "QR-based TR"),
-        (nonlinearlstr.qr_nlss_bounded_trust_region_v2, "QR-based scaled TR"),
+        (nonlinearlstr.lm_trust_region, "QR-based TR"),
+        (nonlinearlstr.lm_trust_region_scaled, "QR-based scaled TR"),
         (nonlinearlstr.bounded_trust_region, "Bounded TCG TR"),
         (nonlinearlstr.nlss_bounded_trust_region, "Standard TR")
     ]
@@ -225,12 +225,12 @@ function create_nonlinearsolve_test(test_algorithm, ex::Int; kwargs...)
         error("Unknown example number")
     end
     # Generate noisy data
-    Random.seed!(123)
+    #Random.seed!(123)
     t = 0.0:1:100  # Time points
     y_clean = f(t, a_true)
-    noise_level = 0.05  # Noise level
-    noise = noise_level * randn(length(y_clean)) * mean(y_clean)
-    y_data = y_clean + noise
+    #noise_level = 0.05  # Noise level
+    #noise = noise_level * randn(length(y_clean)) * mean(y_clean)
+    y_data = y_clean #+ noise
     residual_func(a, p) = f(t, a)-y_data
     jac_func(a, p) = ForwardDiff.jacobian(x -> residual_func(x, p), a)
     lb = repeat([-Inf], inner=4)
@@ -269,10 +269,10 @@ end
     
     # Test both solvers on all three examples
     solvers = [
-        (nonlinearlstr.qr_nlss_bounded_trust_region, "QR-based TR"),
-        (nonlinearlstr.qr_nlss_bounded_trust_region_v2, "QR-based scaled TR"),
+        (nonlinearlstr.lm_trust_region, "QR-based TR"),
+        (nonlinearlstr.lm_trust_region_scaled, "QR-based scaled TR"),
         (TrustRegion(), "NonlinearSolve TR"),
-        (LevenbergMarquardt(), "NonlinearSolve LM"),
+        (NonlinearSolve.LevenbergMarquardt(), "NonlinearSolve LM"),
         (FastShortcutNLLSPolyalg(), "NonlinearSolve Polyalg"),
     ]
     

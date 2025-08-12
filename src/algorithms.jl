@@ -1173,3 +1173,47 @@ function qr_bounded_nlss_trust_region(
     println("Maximum number of iterations reached")
     return x, f, g, max_iter
 end
+
+function bounded_gauss_newton(
+    res::Function, jac::Function,
+    x0::Array{T}, lb::Array{T}, ub::Array{T};
+    max_iter::Int = 100,
+    gtol::Real = 1e-6,
+    ftol::Real = 1e-15,
+    τ::Real = 1e-12,
+    ) where T
+
+    # Initialize variables
+    x = copy(x0)
+    f = res(x)
+    J = jac(x)
+    g = J'f
+    cost = 0.5 * dot(f, f)
+    actual_reduction = Inf
+
+    # Main iteration loop
+    for iter in 1:max_iter
+        # Check convergence
+        if norm(g, 2) < gtol
+            println("Gradient convergence criterion reached")
+            return x, f, g, iter
+        end
+
+        # if actual_reduction < ftol * cost
+        #     println("Function tolerance criterion reached")
+        #     return x, f, g, iter
+        # end
+
+        # Bounded Newton step
+        δ = lsq_box(J, -f, lb - x, ub - x)
+        x += δ
+        f = res(x)
+        cost_new = 0.5 * dot(f, f)
+        actual_reduction = cost - cost_new
+        cost = cost_new
+        J = jac(x)
+        g = J'f
+    end
+    println("Maximum number of iterations reached")
+    return x, f, g, max_iter
+end

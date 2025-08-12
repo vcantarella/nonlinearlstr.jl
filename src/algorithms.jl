@@ -1180,8 +1180,6 @@ function bounded_gauss_newton(
     max_iter::Int = 100,
     inner_max_iter::Int = 100,
     gtol::Real = 1e-6,
-    ftol::Real = 1e-15,
-    τ::Real = 1e-12,
     ) where T
 
     # Initialize variables
@@ -1190,30 +1188,109 @@ function bounded_gauss_newton(
     J = jac(x)
     g = J'f
     cost = 0.5 * dot(f, f)
-    actual_reduction = Inf
-
-    # Main iteration loop
     for iter in 1:max_iter
         # Check convergence
         if norm(g, 2) < gtol
             println("Gradient convergence criterion reached")
             return x, f, g, iter
         end
-
-        # if actual_reduction < ftol * cost
-        #     println("Function tolerance criterion reached")
-        #     return x, f, g, iter
-        # end
-
         # Bounded Newton step
         δ = lsq_box(J, -f, lb - x, ub - x; maxiter=inner_max_iter)
         x += δ
         f = res(x)
-        cost_new = 0.5 * dot(f, f)
-        actual_reduction = cost - cost_new
-        cost = cost_new
+        cost = 0.5 * dot(f, f)
         J = jac(x)
         g = J'f
+    end
+    println("Maximum number of iterations reached")
+    return x, f, g, max_iter
+end
+
+
+function bounded_trust_region(
+    res::Function, jac::Function,
+    x0::Array{T}, lb::Array{T}, ub::Array{T};
+    max_iter::Int = 100,
+    inner_max_iter::Int = 100,
+    gtol::Real = 1e-6,
+    ) where T
+
+    # Trust region parameters
+    Δ₀ = 1.0 #initial radius - Wang & Yuan 2013
+    Δ_m = 100.0 #max radius - Wang & Yuan 2013
+    η₁ = 1e-8 #step threshold - Nocedal & Wright 2007
+    η₂ = 0.25 #shrink threshold - Nocedal & Wright 2007
+    η₃ = 0.75 #expand threshold - Nocedal & Wright 2007
+    # Initialize variables
+    x = copy(x0)
+    f = res(x)
+    J = jac(x)
+    Δ = Δ₀
+    g = J'f
+    cost = 0.5 * dot(f, f)
+    affine_cache = (
+        Dk=Diagonal(ones(length(x))), #Dk
+        inv_Dk=Diagonal(ones(length(x))), #inv_Dk
+        ak=ones(length(x)), #ak
+        bk=ones(length(x)) #bk
+    )
+    update_Dk!(affine_cache, x, lb, ub, g, Δ, 1e-10)
+    Dk, inv_Dk, ak, bk = affine_cache
+    g_hat = Dk*g
+    J_hat = J*Dk
+    lo_step = max.(inv_Dk * (lb - x), -Δ)
+    hi_step = min.(inv_Dk * (ub - x), Δ)
+    for iter in 1:max_iter
+        # Check convergence
+        if norm(g, 2) < gtol
+            println("Gradient convergence criterion reached")
+            return x, f, g, iter
+        end
+        
+        # Bounded Newton step
+        δ = lsq_box(J_hat, -f, lo_step, hi_step; maxiter=inner_max_iter)
+        println("Iteration: $iter, norm(δ): $(norm(δ, 2)), current radius: $Δ")
+        predicted_reduction = -dot(g_hat, δ) - 0.5 * dot(J_hat*δ, J_hat*δ)
+        δ = inv_Dk * δ # scale back to original space
+        x_new = x + δ
+        f_new = res(x_new)
+        cost_new = 0.5 * dot(f_new, f_new)
+        actual_reduction = cost - cost_new
+        ρ = actual_reduction/predicted_reduction
+        if ρ < η₂
+            Δ *= η₂
+            update_Dk!(affine_cache, x, lb, ub, g, Δ, 1e-10)
+            g_hat = Dk*g
+            J_hat = J*Dk
+            lo_step = max.(inv_Dk * (lb - x), -Δ)
+            hi_step = min.(inv_Dk * (ub - x), Δ) 
+        end
+        if ρ >= η₁
+            # Accept step
+            x = x_new
+            f = f_new
+            cost = cost_new
+            J = jac(x)
+            g = J'f
+            println("Accepted step, new cost: $cost, norm(g): $(norm(g, 2))")       
+            # Update trust region radius
+            if ρ >= η₃
+                Δ = min(Δ_m, max(Δ, 2 * norm(δ)))
+                println("Expanded trust region to $Δ")
+            end
+            update_Dk!(affine_cache, x, lb, ub, g, Δ, 1e-10)
+            g_hat = Dk*g
+            J_hat = J*Dk
+            lo_step = max.(inv_Dk * (lb - x), -Δ)
+            hi_step = min.(inv_Dk * (ub - x), Δ)    
+        else
+            println("Rejected step, ρ = $ρ")
+        end
+        # After update_Dk!
+        if any(isnan, diag(Dk)) || any(isinf, diag(Dk)) || any(isnan, diag(inv_Dk)) || any(isinf, diag(inv_Dk))
+            error("NaN or Inf detected in scaling matrices Dk or inv_Dk")
+        end
+
     end
     println("Maximum number of iterations reached")
     return x, f, g, max_iter

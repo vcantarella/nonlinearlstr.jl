@@ -23,12 +23,13 @@ function update_Dk!(affine_cache, u, lb, ub, gk, Δ, ϵ)
     (; Dk, inv_Dk, ak, bk) = affine_cache
     index_a = []
     index_b = []
+    min_distance = 1e-12
     for i in eachindex(u)
-        ak[i] = u[i] - lb[i]
-        bk[i] = ub[i] - u[i]
+        ak[i] = max(u[i] - lb[i], min_distance)  # Prevent zero distance
+        bk[i] = max(ub[i] - u[i], min_distance)  # Prevent zero distance
         if (ak[i] <= Δ) & (gk[i] >= ϵ * ak[i])
             push!(index_a, i)
-        else (bk[i] <= Δ) & (gk[i] >= ϵ * bk[i])
+        elseif (bk[i] <= Δ) & (-gk[i] >= ϵ * bk[i])
             push!(index_b, i)
         end
     end

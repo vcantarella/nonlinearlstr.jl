@@ -127,10 +127,11 @@ function lsq_box(A::AbstractMatrix{<:Number}, b::AbstractVector{<:Number}, lo::A
     Base.require_one_based_indexing(A, b, lo, hi)
     x = A \ b
     @. x = clamp(x, lo, hi)
-    AᵀA = A'*A
+    #AᵀA = A'*A
     Aᵀb = A'b
-    g = AᵀA*x; g .-= Aᵀb # gradient ∇ₓ of ½‖b - Ax‖²
-    inactive = Bool[lo[i] < hi[i] && (x[i] != lo[i] || g[i] ≤ 0) && (x[i] != hi[i] || g[i] ≥ 0) for i in eachindex(x)]
+    g = A'*(A*x); g .-= Aᵀb # gradient ∇ₓ of ½‖b - Ax‖²
+    inactive = Bool[lo[i] < hi[i] && (x[i] != lo[i] || g[i] ≤ 0) &&
+                    (x[i] != hi[i] || g[i] ≥ 0) for i in eachindex(x)]
     all(inactive) && return x
     active = map(!, inactive)
     xprev = copy(x)
@@ -138,9 +139,10 @@ function lsq_box(A::AbstractMatrix{<:Number}, b::AbstractVector{<:Number}, lo::A
         xa = A[:,inactive] \ (b - A[:,active]*x[active])
         x[inactive] = xa
         @. x = clamp(x, lo, hi)
-        g .= mul!(g, AᵀA, x) .- Aᵀb
+        g .= mul!(g, A', A*x) .- Aᵀb
         for i in eachindex(x)
-            inactive[i] = lo[i] < hi[i] && (x[i] != lo[i] || g[i] ≤ 0) && (x[i] != hi[i] || g[i] ≥ 0)
+            inactive[i] = lo[i] < hi[i] && (x[i] != lo[i] || g[i] ≤ 0) &&
+                (x[i] != hi[i] || g[i] ≥ 0)
         end
         all(i -> inactive[i] == !active[i], eachindex(active)) && return x # convergence: active set unchanged 
         norm(x - xprev) ≤ max(rtol*norm(x), atol) && return x # convergence: x not changing much

@@ -93,11 +93,17 @@ x_opt, r_opt, g_opt, iterations = result
 final_obj = 0.5 * dot(r_opt, r_opt)
 converged = norm(g_opt, 2) < 1e-6 
 
+result_tr = nonlinearlstr.bounded_trust_region(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0, prob_data.bl, prob_data.bu,;
+                max_iter=100, gtol=1e-8
+            )
+
 for prob_data in nls_functions
     result = nonlinearlstr.bounded_gauss_newton(
                 prob_data.residual_func, prob_data.jacobian_func, 
                 prob_data.x0, prob_data.bl, prob_data.bu,;
-                max_iter=100, gtol=1e-8
+                max_iter=50, gtol=1e-8
             )
     x_opt, r_opt, g_opt, iterations = result
     final_obj = 0.5 * dot(r_opt, r_opt)
@@ -108,5 +114,29 @@ for prob_data in nls_functions
     println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
         prob_data.residual_func(prob_data.x0)))")
     println("  Final objective value: $final_obj")
+    println("  Number of iterations: $iterations")
     println("  Converged: $converged")
+end
+
+for prob_data in nls_functions
+    try
+        result = nonlinearlstr.bounded_trust_region(
+                    prob_data.residual_func, prob_data.jacobian_func, 
+                    prob_data.x0, prob_data.bl, prob_data.bu,;
+                    max_iter=100, gtol=1e-8
+                )
+        x_opt, r_opt, g_opt, iterations = result
+        final_obj = 0.5 * dot(r_opt, r_opt)
+        converged = norm(g_opt, 2) < 1e-6 
+        println("Problem: $(prob_data.name)")
+        println("  Optimal x: $(x_opt)")
+        println("  Final residual norm: $(norm(r_opt, 2))")
+        println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
+            prob_data.residual_func(prob_data.x0)))")
+        println("  Final objective value: $final_obj")
+        println("  Number of iterations: $iterations")
+        println("  Converged: $converged")
+    catch e
+        println("Problem: $(prob_data.name) failed with error: $e")
+    end
 end

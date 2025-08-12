@@ -149,7 +149,9 @@ function lsq_box(A::AbstractMatrix{<:Number}, b::AbstractVector{<:Number}, lo::A
         xprev .= x
         @. active = !inactive
     end
-    error("convergence failure: $maxiter iterations reached")
+    #error("convergence failure: $maxiter iterations reached")
+    println("Warning!: convergence failure: $maxiter iterations reached")
+    return x
 end
 
 # """

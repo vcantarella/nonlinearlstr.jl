@@ -1178,6 +1178,7 @@ function bounded_gauss_newton(
     res::Function, jac::Function,
     x0::Array{T}, lb::Array{T}, ub::Array{T};
     max_iter::Int = 100,
+    inner_max_iter::Int = 100,
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
     τ::Real = 1e-12,
@@ -1205,7 +1206,7 @@ function bounded_gauss_newton(
         # end
 
         # Bounded Newton step
-        δ = lsq_box(J, -f, lb - x, ub - x)
+        δ = lsq_box(J, -f, lb - x, ub - x; maxiter=inner_max_iter)
         x += δ
         f = res(x)
         cost_new = 0.5 * dot(f, f)

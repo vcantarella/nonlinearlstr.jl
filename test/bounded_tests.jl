@@ -91,4 +91,22 @@ result = nonlinearlstr.bounded_gauss_newton(
             )
 x_opt, r_opt, g_opt, iterations = result
 final_obj = 0.5 * dot(r_opt, r_opt)
-converged = norm(g_opt, 2) < 1e-6    
+converged = norm(g_opt, 2) < 1e-6 
+
+for prob_data in nls_functions
+    result = nonlinearlstr.bounded_gauss_newton(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0, prob_data.bl, prob_data.bu,;
+                max_iter=100, gtol=1e-8
+            )
+    x_opt, r_opt, g_opt, iterations = result
+    final_obj = 0.5 * dot(r_opt, r_opt)
+    converged = norm(g_opt, 2) < 1e-6 
+    println("Problem: $(prob_data.name)")
+    println("  Optimal x: $(x_opt)")
+    println("  Final residual norm: $(norm(r_opt, 2))")
+    println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
+        prob_data.residual_func(prob_data.x0)))")
+    println("  Final objective value: $final_obj")
+    println("  Converged: $converged")
+end

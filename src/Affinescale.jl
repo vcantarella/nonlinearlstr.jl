@@ -21,27 +21,37 @@ This function updates the affine scaling matrix `Dk` and its inverse `inv_Dk` ba
 """
 function update_Dk!(affine_cache, u, lb, ub, gk, Δ, ϵ)
     (; Dk, inv_Dk, ak, bk) = affine_cache
-    index_a = []
-    index_b = []
+    
+    # Pre-allocate for the numerator of tk
+    tk_numerator_sq = 0.0
+    
+    # Store indices to avoid re-computation
+    index_map = zeros(Int, length(u)) # 0 for neither, 1 for S_k^1, 2 for S_k^2
+
     min_distance = 1e-12
     for i in eachindex(u)
-        ak[i] = max(u[i] - lb[i], min_distance)  # Prevent zero distance
-        bk[i] = max(ub[i] - u[i], min_distance)  # Prevent zero distance
-        if (ak[i] <= Δ) & (gk[i] >= ϵ * ak[i])
-            push!(index_a, i)
-        elseif (bk[i] <= Δ) & (-gk[i] >= ϵ * bk[i])
-            push!(index_b, i)
+        ak[i] = max(u[i] - lb[i], min_distance)
+        bk[i] = max(ub[i] - u[i], min_distance)
+
+        if (ak[i] <= Δ) && (gk[i] >= ϵ * ak[i])
+            tk_numerator_sq += ak[i] * gk[i]
+            index_map[i] = 1
+        elseif (bk[i] <= Δ) && (-gk[i] >= ϵ * bk[i])
+            tk_numerator_sq += bk[i] * abs(gk[i])
+            index_map[i] = 2
         end
     end
-    tk = sqrt(sum(ak[index_a] .* gk[index_a]) + sum(bk[index_b] .* abs.(gk[index_b]))) / Δ
+
+    tk = sqrt(tk_numerator_sq) / Δ
+
     for i in axes(Dk, 1)
-        if (ak[i] <= Δ) & (gk[i] >= ϵ * ak[i])
+        if index_map[i] == 1
             Dk[i, i] = tk * sqrt(ak[i] / gk[i])
-        elseif (bk[i] <= Δ) & (-gk[i] >= ϵ * bk[i])
+        elseif index_map[i] == 2
             Dk[i, i] = tk * sqrt(bk[i] / abs(gk[i]))
         else
-            Dk[i, i] = 1
+            Dk[i, i] = 1.0
         end
-        inv_Dk[i, i] = 1 / Dk[i, i]
+        inv_Dk[i, i] = 1.0 / Dk[i, i]
     end
 end

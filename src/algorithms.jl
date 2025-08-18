@@ -633,6 +633,107 @@ function lm_trust_region(
 end
 
 
+function lm_trust_region_v2(
+    res::Function, jac::Function,
+    x0::Array{T};
+    initial_radius::Real = 1.0,
+    max_trust_radius::Real = 1e12,
+    min_trust_radius::Real = 1e-8,
+    step_threshold::Real = 0.01,
+    shrink_threshold::Real = 0.25,
+    expand_threshold::Real = 0.75,
+    shrink_factor::Real = 0.25,
+    expand_factor::Real = 2.0,
+    max_iter::Int = 100,
+    gtol::Real = 1e-6,
+    ftol::Real = 1e-15,
+    τ::Real = 1e-12,
+    ) where T
+
+    # Initialize
+    x = copy(x0)
+    f = res(x)
+    J = jac(x)
+    cost = 0.5 * dot(f, f)
+    g = J' * f
+    if norm(x0) > 1e-4
+        initial_radius = norm(x0)
+    end
+    radius = initial_radius
+    # Check initial convergence
+    if norm(g) < gtol
+        println("Initial guess satisfies gradient tolerance")
+        return x, f, g, 0
+    end
+    qrls = qr(J, ColumnNorm())
+    #iterations
+    for iter in 1:max_iter
+        # Compute step using QR-based trust region
+        δgn = qrls \ -f
+        if norm(δgn) <= radius
+            # The minimal-norm step that perfectly fits the model is within the radius.
+            # This is the ideal solution. There is no need to make the step longer.
+            δ = δgn
+            λ = 0.0
+        else
+            # The smallest "perfect" step is too big. We must find a damped
+            # step on the boundary using the standard LM approach.
+            λ, δ = find_λ_v2!(radius, qrls, f, 100)
+        end
+        # Evaluate new point
+        x_new = x + δ
+        f_new = res(x_new)
+        cost_new = 0.5 * dot(f_new, f_new)
+        # Compute reduction ratio
+        actual_reduction = cost - cost_new
+        # Predicted reduction using QR factorization
+        Jδ = J * δ
+        #predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
+        predicted_reduction = 0.5*dot(Jδ, Jδ)+ λ*dot(δ,δ)
+        if predicted_reduction <= 0 #this potentially means the δ is wrong but we leave some margin
+            println("Non-positive predicted reduction, shrinking radius")
+            radius *= shrink_factor
+            continue
+        end
+        # the reduction ratio
+        ρ = actual_reduction / predicted_reduction
+        # Update trust region radius
+        if (ρ >= expand_threshold) && (λ > 0)
+            radius = min(max_trust_radius, expand_factor * norm(δ))
+        elseif ρ < shrink_threshold
+            radius *= shrink_factor
+        end
+        # Accept or reject step
+        if ρ >= step_threshold
+            x = x_new
+            f = f_new
+            cost = cost_new
+            J = jac(x)
+            g = J' * f
+            qrls = qr(J, ColumnNorm())
+            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            # Check convergence
+            if norm(g, 2) < gtol
+                println("Gradient convergence criterion reached")
+                return x, f, g, iter
+            end
+            if actual_reduction < ftol * cost
+                println("Function tolerance criterion reached")
+                return x, f, g, iter
+            end
+        else
+            println("Step rejected, ρ = $ρ")
+        end
+        # Check trust region size
+        if radius < min_trust_radius
+            println("Trust region radius below minimum")
+            return x, f, g, iter
+        end        
+    end
+    println("Maximum number of iterations reached")
+    return x, f, g, max_iter
+end
+
 
 function lm_trust_region_scaled(
     res::Function, jac::Function,
@@ -872,8 +973,8 @@ function qr_nlss_trust_region_v2(
         ρ = actual_reduction / predicted_reduction
         
         # Update trust region radius
-        if ρ >= expand_threshold
-            radius = min(max_trust_radius, max(radius, expand_factor * norm(δ)))
+        if (ρ >= expand_threshold) && (λ > 0)
+            radius = min(max_trust_radius, expand_factor * norm(δ))
         elseif ρ < shrink_threshold
             radius *= shrink_factor
         end
@@ -889,7 +990,7 @@ function qr_nlss_trust_region_v2(
             println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
             
             # Check convergence
-            if norm(g, Inf) < gtol
+            if norm(g, 2) < gtol
                 println("Gradient convergence criterion reached")
                 return x, f, g, iter
             end
@@ -901,14 +1002,12 @@ function qr_nlss_trust_region_v2(
         else
             println("Step rejected, ρ = $ρ")
         end
-        
         # Check trust region size
         if radius < min_trust_radius
             println("Trust region radius below minimum")
             return x, f, g, iter
         end        
     end
-    
     println("Maximum number of iterations reached")
     return x, f, g, max_iter
 end
@@ -1228,18 +1327,19 @@ function bounded_trust_region(
     Δ = Δ₀
     g = J'f
     cost = 0.5 * dot(f, f)
+    
     affine_cache = (
-        Dk=Diagonal(ones(length(x))), #Dk
-        inv_Dk=Diagonal(ones(length(x))), #inv_Dk
-        ak=ones(length(x)), #ak
-        bk=ones(length(x)) #bk
+        Dk=Diagonal(ones(length(x))),
+        inv_Dk=Diagonal(ones(length(x))),
+        ak=ones(length(x)),
+        bk=ones(length(x))
     )
     update_Dk!(affine_cache, x, lb, ub, g, Δ, 1e-10)
     Dk, inv_Dk, ak, bk = affine_cache
     g_hat = Dk*g
     J_hat = J*Dk
-    lo_step = max.(inv_Dk * (lb - x), -Δ)
-    hi_step = min.(inv_Dk * (ub - x), Δ)
+    lo_step = max.(inv_Dk * (lb - x), -Δ*ones(length(x)))
+    hi_step = min.(inv_Dk * (ub - x), Δ*ones(length(x)))
     for iter in 1:max_iter
         # Check convergence
         if norm(g, 2) < gtol
@@ -1251,7 +1351,7 @@ function bounded_trust_region(
         δ = lsq_box(J_hat, -f, lo_step, hi_step; maxiter=inner_max_iter)
         println("Iteration: $iter, norm(δ): $(norm(δ, 2)), current radius: $Δ")
         predicted_reduction = -dot(g_hat, δ) - 0.5 * dot(J_hat*δ, J_hat*δ)
-        δ = inv_Dk * δ # scale back to original space
+        δ = Dk * δ # scale back to original space
         x_new = x + δ
         f_new = res(x_new)
         cost_new = 0.5 * dot(f_new, f_new)
@@ -1262,8 +1362,8 @@ function bounded_trust_region(
             update_Dk!(affine_cache, x, lb, ub, g, Δ, 1e-10)
             g_hat = Dk*g
             J_hat = J*Dk
-            lo_step = max.(inv_Dk * (lb - x), -Δ)
-            hi_step = min.(inv_Dk * (ub - x), Δ) 
+            lo_step = max.(inv_Dk * (lb - x), -Δ*ones(length(x)))
+            hi_step = min.(inv_Dk * (ub - x), Δ*ones(length(x)))
         end
         if ρ >= η₁
             # Accept step
@@ -1281,8 +1381,8 @@ function bounded_trust_region(
             update_Dk!(affine_cache, x, lb, ub, g, Δ, 1e-10)
             g_hat = Dk*g
             J_hat = J*Dk
-            lo_step = max.(inv_Dk * (lb - x), -Δ)
-            hi_step = min.(inv_Dk * (ub - x), Δ)    
+            lo_step = max.(inv_Dk * (lb - x), -Δ*ones(length(x)))
+            hi_step = min.(inv_Dk * (ub - x), Δ*ones(length(x)))
         else
             println("Rejected step, ρ = $ρ")
         end
@@ -1291,6 +1391,340 @@ function bounded_trust_region(
             error("NaN or Inf detected in scaling matrices Dk or inv_Dk")
         end
 
+    end
+    println("Maximum number of iterations reached")
+    return x, f, g, max_iter
+end
+
+
+function fake_trust_region_reflective(
+    res::Function, jac::Function,
+    x0::Array{T}, lb::Array{T}, ub::Array{T};
+    max_iter::Int = 100,
+    inner_max_iter::Int = 100,
+    gtol::Real = 1e-6,
+    ) where T
+
+    # Trust region parameters
+    Δ₀ = 1.0 #initial radius - Wang & Yuan 2013
+    Δ_m = 100.0 #max radius - Wang & Yuan 2013
+    η₁ = 1e-8 #step threshold - Nocedal & Wright 2007
+    η₂ = 0.25 #shrink threshold - Nocedal & Wright 2007
+    η₃ = 0.75 #expand threshold - Nocedal & Wright 2007
+    # Initialize variables
+    x = copy(x0)
+    f = res(x)
+    J = jac(x)
+    Δ = Δ₀
+    g = J'f
+    cost = 0.5 * dot(f, f)
+    
+    affine_cache = (
+        Dk=Diagonal(ones(length(x))),
+        inv_Dk=Diagonal(ones(length(x))),
+        ak=ones(length(x)),
+        bk=ones(length(x))
+    )
+    update_Dk!(affine_cache, x, lb, ub, g, Δ, 1e-10)
+    Dk, inv_Dk, ak, bk = affine_cache
+    g_hat = Dk*g
+    J_hat = J*Dk
+    lo_step = max.(inv_Dk * (lb - x), -Δ*ones(length(x)))
+    hi_step = min.(inv_Dk * (ub - x), Δ*ones(length(x)))
+    for iter in 1:max_iter
+        # Check convergence
+        if norm(g, 2) < gtol
+            println("Gradient convergence criterion reached")
+            return x, f, g, iter
+        end
+        
+        # Bounded Newton step
+        # for numerical stability we take a damped gauss newton step as our
+        # first try:
+        λ = 1e-6
+        δ = qr_regularized_solve_scaled(J, inv_Dk, -f, λ)
+        if norm(inv_Dk*δ) > Δ
+            # Then we need to calculate the regularized solve:
+            λ, δ = find_λ_scaled!(Δ, J, inv_Dk, f, 100)
+        end
+        # Now we check for the bounds:
+        if any(x + δ .< lb) || any(x + δ .> ub)
+            # Now we need to decide between three steps
+            # Reflect the step back into bounds
+            α, hits = step_size_to_bound(x, δ, lb, ub)
+            println("Reflective step, α: $α, hits: $hits")
+            if α < 1.0
+                δ *= α
+            end
+        end
+        println("Iteration: $iter, norm(δ): $(norm(δ, 2)), current radius: $Δ")
+        predicted_reduction = -dot(g, δ) - 0.5 * dot(J*δ, J*δ)
+        if predicted_reduction <= 0
+            println("Non-positive predicted reduction, shrinking radius")
+            Δ *= η₂
+            update_Dk!(affine_cache, x, lb, ub, g, Δ, 1e-10)
+            continue  # Try again with smaller radius
+        end
+        x_new = x + δ
+        f_new = res(x_new)
+        cost_new = 0.5 * dot(f_new, f_new)
+        actual_reduction = cost - cost_new
+        ρ = actual_reduction/predicted_reduction
+        if ρ < η₂
+            Δ *= η₂
+            update_Dk!(affine_cache, x, lb, ub, g, Δ, 1e-10)
+            g_hat = Dk*g
+            J_hat = J*Dk
+            lo_step = max.(inv_Dk * (lb - x), -Δ*ones(length(x)))
+            hi_step = min.(inv_Dk * (ub - x), Δ*ones(length(x)))
+        end
+        if ρ >= η₁
+            # Accept step
+            x = x_new
+            f = f_new
+            cost = cost_new
+            J = jac(x)
+            g = J'f
+            println("Accepted step, new cost: $cost, norm(g): $(norm(g, 2))")       
+            # Update trust region radius
+            if ρ >= η₃
+                Δ = min(Δ_m, max(Δ, 2 * norm(δ)))
+                println("Expanded trust region to $Δ")
+            end
+            update_Dk!(affine_cache, x, lb, ub, g, Δ, 1e-10)
+            g_hat = Dk*g
+            J_hat = J*Dk
+            lo_step = max.(inv_Dk * (lb - x), -Δ*ones(length(x)))
+            hi_step = min.(inv_Dk * (ub - x), Δ*ones(length(x)))
+        else
+            println("Rejected step, ρ = $ρ")
+        end
+        # After update_Dk!
+        if any(isnan, diag(Dk)) || any(isinf, diag(Dk)) || any(isnan, diag(inv_Dk)) || any(isinf, diag(inv_Dk))
+            error("NaN or Inf detected in scaling matrices Dk or inv_Dk")
+        end
+
+    end
+    println("Maximum number of iterations reached")
+    return x, f, g, max_iter
+end
+
+
+function lm_fan_lu(
+    res::Function, jac::Function,
+    x0::Array{T};
+    max_trust_radius::Real = 1e12,
+    min_trust_radius::Real = 1e-8,
+    step_threshold::Real = 0.01,
+    shrink_threshold::Real = 0.25,
+    expand_threshold::Real = 0.75,
+    shrink_factor::Real = 0.25,
+    expand_factor::Real = 2.0,
+    max_iter::Int = 100,
+    gtol::Real = 1e-6,
+    ftol::Real = 1e-15,
+    τ::Real = 1e-12,
+    ) where T
+
+    # Initialize
+    x = copy(x0)
+    f = res(x)
+    J = jac(x)
+    cost = 0.5 * dot(f, f)
+    g = J' * f
+    M = 1e-8
+    μₖ = 1.0
+    radius = μₖ * norm(f)
+    # Check initial convergence
+    if norm(g) < gtol
+        println("Initial guess satisfies gradient tolerance")
+        return x, f, g, 0
+    end
+    #iterations
+    for iter in 1:max_iter
+        # Compute step using QR-based trust region
+        δgn = J \ -f
+        if norm(δgn) <= radius
+            # The minimal-norm step that perfectly fits the model is within the radius.
+            # This is the ideal solution. There is no need to make the step longer.
+            δ = δgn
+            λ = 0.0
+        else
+            # The smallest "perfect" step is too big. We must find a damped
+            # step on the boundary using the standard LM approach.
+            λ, δ = find_λ!(radius, J, f, 100)
+        end
+        # Evaluate new point
+        x_new = x + δ
+        f_new = res(x_new)
+        cost_new = 0.5 * dot(f_new, f_new)
+        # Now solve a new problem based on new x and old J
+        δgn_new = J \ -f_new
+        radius = μₖ * norm(f_new)
+        if norm(δgn_new) <= radius
+            # The minimal-norm step that perfectly fits the model is within the radius.
+            # This is the ideal solution. There is no need to make the step longer.
+            δ_new = δgn
+            λ = 0.0
+        else
+            # The smallest "perfect" step is too big. We must find a damped
+            # step on the boundary using the standard LM approach.
+            λ, δ_new = find_λ!(radius, J, f_new, 100)
+        end
+        x_new_new = x_new + δ_new
+        f_new_new = res(x_new_new)
+        cost_new_new = 0.5 * dot(f_new_new, f_new_new)
+        # Compute reduction ratio
+        actual_reduction = cost - cost_new_new
+        # Predicted reduction
+        Jδ = J * δ
+        Jδ_new = J * δ_new
+        #predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
+        predicted_reduction = -dot(f, Jδ) - 0.5 * dot(Jδ, Jδ) - dot(f_new, Jδ_new) - 0.5 * dot(Jδ_new, Jδ_new)
+        if predicted_reduction <= 0 #this potentially means the δ is wrong but we leave some margin
+            println("Non-positive predicted reduction, shrinking radius")
+            μₖ *= shrink_factor
+            radius = μₖ * norm(f)
+            continue
+        end
+        # the reduction ratio
+        ρ = actual_reduction / predicted_reduction
+        # Update trust region radius
+        # Accept or reject step
+        if ρ >= step_threshold
+            x = x_new
+            f = f_new
+            cost = cost_new
+            J = jac(x)
+            g = J' * f
+            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            radius = μₖ * norm(f)
+            # Check convergence
+            if norm(g, 2) < gtol
+                println("Gradient convergence criterion reached")
+                return x, f, g, iter
+            end
+            if actual_reduction < ftol * cost
+                println("Function tolerance criterion reached")
+                return x, f, g, iter
+            end
+        else
+            println("Step rejected, ρ = $ρ")
+        end
+        if ρ >= expand_threshold
+            μₖ *= 4
+            radius = μₖ * norm(f)
+        elseif ρ < shrink_threshold
+            μₖ = max( μₖ/4, M)
+            radius = μₖ * norm(f)
+        end
+        # Check trust region size
+        if radius < min_trust_radius
+            println("Trust region radius below minimum")
+            return x, f, g, iter
+        end        
+    end
+    println("Maximum number of iterations reached")
+    return x, f, g, max_iter
+end
+
+
+function svd_trust_region(
+    res::Function, jac::Function,
+    x0::Array{T};
+    initial_radius::Real = 1.0,
+    max_trust_radius::Real = 1e12,
+    min_trust_radius::Real = 1e-8,
+    step_threshold::Real = 0.01,
+    shrink_threshold::Real = 0.25,
+    expand_threshold::Real = 0.75,
+    shrink_factor::Real = 0.25,
+    expand_factor::Real = 2.0,
+    max_iter::Int = 100,
+    gtol::Real = 1e-6,
+    ftol::Real = 1e-15,
+    τ::Real = 1e-12,
+    ) where T
+
+    # Initialize
+    x = copy(x0)
+    f = res(x)
+    J = jac(x)
+    cost = 0.5 * dot(f, f)
+    g = J' * f
+    if norm(x0) > 1e-4
+        initial_radius = norm(x0)
+    end
+    radius = initial_radius
+    # Check initial convergence
+    if norm(g) < gtol
+        println("Initial guess satisfies gradient tolerance")
+        return x, f, g, 0
+    end
+    svdls = svd(J)
+    #iterations
+    for iter in 1:max_iter
+        # Compute step using QR-based trust region
+        δgn = svdls \ -f
+        if norm(δgn) <= radius
+            # The minimal-norm step that perfectly fits the model is within the radius.
+            # This is the ideal solution. There is no need to make the step longer.
+            δ = δgn
+            λ = 0.0
+        else
+            # The smallest "perfect" step is too big. We must find a damped
+            # step on the boundary using the standard LM approach.
+            λ, δ = find_λ_svd(radius, svdls, J, f, 100)
+        end
+        # Evaluate new point
+        x_new = x + δ
+        f_new = res(x_new)
+        cost_new = 0.5 * dot(f_new, f_new)
+        # Compute reduction ratio
+        actual_reduction = cost - cost_new
+        # Predicted reduction using QR factorization
+        Jδ = J * δ
+        #predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
+        predicted_reduction = 0.5*dot(Jδ, Jδ)+ λ*dot(δ,δ)
+        if predicted_reduction <= 0 #this potentially means the δ is wrong but we leave some margin
+            println("Non-positive predicted reduction, shrinking radius")
+            radius *= shrink_factor
+            continue
+        end
+        # the reduction ratio
+        ρ = actual_reduction / predicted_reduction
+        # Update trust region radius
+        if (ρ >= expand_threshold) && (λ > 0)
+            radius = min(max_trust_radius, expand_factor * norm(δ))
+        elseif ρ < shrink_threshold
+            radius *= shrink_factor
+        end
+        # Accept or reject step
+        if ρ >= step_threshold
+            x = x_new
+            f = f_new
+            cost = cost_new
+            J = jac(x)
+            g = J' * f
+            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            # Check convergence
+            if norm(g, 2) < gtol
+                println("Gradient convergence criterion reached")
+                return x, f, g, iter
+            end
+            if actual_reduction < ftol * cost
+                println("Function tolerance criterion reached")
+                return x, f, g, iter
+            end
+            svdls = svd(J)  # Update SVD after step
+        else
+            println("Step rejected, ρ = $ρ")
+        end
+        # Check trust region size
+        if radius < min_trust_radius
+            println("Trust region radius below minimum")
+            return x, f, g, iter
+        end        
     end
     println("Maximum number of iterations reached")
     return x, f, g, max_iter

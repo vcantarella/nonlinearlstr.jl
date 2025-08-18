@@ -8,6 +8,7 @@ using NonlinearSolve
 using Pkg, Revise
 using DataFrames, CSV, CairoMakie
 using LeastSquaresOptim
+using Tidier
 using LinearAlgebra, Statistics
 
 Pkg.develop(PackageSpec(path="/Users/vcantarella/.julia/dev/nonlinearlstr"))
@@ -99,6 +100,16 @@ result_tr = nonlinearlstr.bounded_trust_region(
                 max_iter=100, gtol=1e-8
             )
 
+result_fk = nonlinearlstr.fake_trust_region_reflective(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0, prob_data.bl, prob_data.bu,;
+                max_iter=100, gtol=1e-8
+            )
+x_opt, r_opt, g_opt, iterations = result
+final_obj = 0.5 * dot(r_opt, r_opt)
+converged = norm(g_opt, 2) < 1e-6 
+
+lsresults = []
 for prob_data in nls_functions
     result = nonlinearlstr.bounded_gauss_newton(
                 prob_data.residual_func, prob_data.jacobian_func, 
@@ -106,8 +117,12 @@ for prob_data in nls_functions
                 max_iter=50, gtol=1e-8
             )
     x_opt, r_opt, g_opt, iterations = result
+    results = (x_opt=x_opt, r_opt=r_opt, g_opt=g_opt, iterations=iterations)
     final_obj = 0.5 * dot(r_opt, r_opt)
-    converged = norm(g_opt, 2) < 1e-6 
+    converged = norm(g_opt, 2) < 1e-6
+    solver = "Gauss-Newton"
+    final_result = merge(results, (solver=solver, converged=converged, final_obj=final_obj))
+    push!(lsresults, final_result)
     println("Problem: $(prob_data.name)")
     println("  Optimal x: $(x_opt)")
     println("  Final residual norm: $(norm(r_opt, 2))")
@@ -119,24 +134,59 @@ for prob_data in nls_functions
 end
 
 for prob_data in nls_functions
-    try
-        result = nonlinearlstr.bounded_trust_region(
-                    prob_data.residual_func, prob_data.jacobian_func, 
-                    prob_data.x0, prob_data.bl, prob_data.bu,;
-                    max_iter=100, gtol=1e-8
-                )
-        x_opt, r_opt, g_opt, iterations = result
-        final_obj = 0.5 * dot(r_opt, r_opt)
-        converged = norm(g_opt, 2) < 1e-6 
-        println("Problem: $(prob_data.name)")
-        println("  Optimal x: $(x_opt)")
-        println("  Final residual norm: $(norm(r_opt, 2))")
-        println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
-            prob_data.residual_func(prob_data.x0)))")
-        println("  Final objective value: $final_obj")
-        println("  Number of iterations: $iterations")
-        println("  Converged: $converged")
-    catch e
-        println("Problem: $(prob_data.name) failed with error: $e")
-    end
+    result = nonlinearlstr.bounded_trust_region(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0, prob_data.bl, prob_data.bu,;
+                max_iter=100, gtol=1e-8
+            )
+    x_opt, r_opt, g_opt, iterations = result
+    results = (x_opt=x_opt, r_opt=r_opt, g_opt=g_opt, iterations=iterations)
+    final_obj = 0.5 * dot(r_opt, r_opt)
+    converged = norm(g_opt, 2) < 1e-6 
+    solver = "Bounded-Trust-Region"
+    final_result = merge(results, (solver=solver, converged=converged, final_obj=final_obj))
+    push!(lsresults, final_result)
+    println("Problem: $(prob_data.name)")
+    println("  Optimal x: $(x_opt)")
+    println("  Final residual norm: $(norm(r_opt, 2))")
+    println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
+        prob_data.residual_func(prob_data.x0)))")
+    println("  Final objective value: $final_obj")
+    println("  Number of iterations: $iterations")
+    println("  Converged: $converged")
+end
+
+
+for prob_data in nls_functions
+    result = nonlinearlstr.fake_trust_region_reflective(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0, prob_data.bl, prob_data.bu,;
+                max_iter=100, gtol=1e-8
+            )
+    x_opt, r_opt, g_opt, iterations = result
+    results = (x_opt=x_opt, r_opt=r_opt, g_opt=g_opt, iterations=iterations)
+    final_obj = 0.5 * dot(r_opt, r_opt)
+    converged = norm(g_opt, 2) < 1e-6
+    solver = "Fake-Trust-Region-Reflective"
+    final_result = merge(results, (solver=solver, converged=converged, final_obj=final_obj))
+    push!(lsresults, final_result)
+    println("Problem: $(prob_data.name)")
+    println("  Optimal x: $(x_opt)")
+    println("  Final residual norm: $(norm(r_opt, 2))")
+    println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
+        prob_data.residual_func(prob_data.x0)))")
+    println("  Final objective value: $final_obj")
+    println("  Number of iterations: $iterations")
+    println("  Converged: $converged")
+end
+
+df = DataFrame(lsresults)
+
+@chain df begin
+    @group_by solver
+    @summarize(
+        iters = median(iterations),
+        converged = sum(converged),
+        mean_obj = mean(final_obj),
+    )
 end

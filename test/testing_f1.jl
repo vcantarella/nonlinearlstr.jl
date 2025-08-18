@@ -4,7 +4,6 @@ using Pkg, Revise
 using DataFrames, CSV, CairoMakie
 using LinearAlgebra, Statistics
 
-Pkg.develop(PackageSpec(path="/Users/vcantarella/.julia/dev/nonlinearlstr"))
 using nonlinearlstr
 
 f_ex3(t::AbstractArray, a) = @. a[1] * exp.(-t / a[2]) + a[3] * sin.(t / a[4])
@@ -27,6 +26,23 @@ a_opt, f_opt, g_opt, iter = nonlinearlstr.lm_trust_region(
     residual_func, jac_func, a0;
     max_iter = 100, gtol = 1e-8, shrink_factor = 0.5
 )
+
+# Running the lm_trust_region solver
+a_opt, f_opt, g_opt, iter = nonlinearlstr.lm_trust_region_v2(
+    residual_func, jac_func, a0;
+    max_iter = 100, gtol = 1e-8, shrink_factor = 0.5
+)
+
+a_opt, f_opt, g_opt, iter = nonlinearlstr.lm_fan_lu(
+    residual_func, jac_func, a0;
+    max_iter = 100, gtol = 1e-8, shrink_factor = 0.5
+)
+
+a_opt, f_opt, g_opt, iter = nonlinearlstr.svd_trust_region(
+    residual_func, jac_func, a0;
+    max_iter = 100, gtol = 1e-8, shrink_factor = 0.5
+)
+
 
 # Running the lm_trust_region solver
 a_opt, f_opt, g_opt, iter = nonlinearlstr.lm_trust_region_scaled(

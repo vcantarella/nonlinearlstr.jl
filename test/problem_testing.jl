@@ -20,7 +20,10 @@ nls_problems = find_nlls_problems(999)
 solvers = [
         ("QR-NLLS", nonlinearlstr.qr_nlss_trust_region),
         ("LM-TR", nonlinearlstr.lm_trust_region),
+        ("LM-TR-v2", nonlinearlstr.lm_trust_region_v2),
         ("LM-TR-scaled", nonlinearlstr.lm_trust_region_scaled),
+        ("LM-FAN-LU", nonlinearlstr.lm_fan_lu),
+        ("SVD-LMTR", nonlinearlstr.svd_trust_region),
         ("PRIMA-NEWUOA", nothing),  # Special handling
         ("PRIMA-BOBYQA", nothing),  # Special handling
         ("NL-TrustRegion", NonlinearSolve.TrustRegion),  # Special handling
@@ -57,14 +60,15 @@ end
         converged = sum(final_close)/maximum(final_close),
         iterations = median(iterations),
         mean_objective = mean(final_objective),
-        std_objective = std(final_objective)
+        std_objective = std(final_objective),
+        mean_execution_time = mean(time)
     )
     @arrange(desc(converged))
 end
 
 #Check and return the problems where the performance with QR-NLLS is bad
 df_nls_bad = @chain df_nls_proc begin
-    @filter(solver == "LM-TR")
+    @filter(solver == "LM-TR-v2")
     @filter(final_close == false)
 end
 
@@ -73,7 +77,7 @@ bad_probs = df_nls_bad.problem
 bad_probs_symb = Symbol.(bad_probs)
 df_bad_probs = DataFrame(nlls_benchmark(bad_probs_symb, solvers, max_iter=200))
 
-first_bad_prob = bad_probs[3]
+first_bad_prob = bad_probs[4]
 df_bad_probs[df_bad_probs.problem .== first_bad_prob, :]
 
 
@@ -86,7 +90,16 @@ bad_probs = df_nls_bad.problem[df_nls_bad.converged .== false]
 bad_probs_symb = Symbol.(bad_probs)
 df_bad_probs = DataFrame(nlls_benchmark(bad_probs_symb, solvers, max_iter=200))
 
-first_bad_prob = bad_probs[5]
-df_bad_probs[df_bad_probs.problem .== first_bad_prob, :]
-# Convert to DataFrame
-#df_cutest = DataFrame(cutest_results)no
+display(
+    @chain df_nls_proc begin
+    @group_by(solver)
+    @summarize(
+        converged = sum(final_close)/maximum(final_close),
+        iterations = median(iterations),
+        mean_objective = mean(final_objective),
+        std_objective = std(final_objective),
+        mean_execution_time = mean(time)
+    )
+    @arrange(desc(converged))
+end
+)

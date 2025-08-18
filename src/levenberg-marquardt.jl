@@ -257,6 +257,52 @@ function find_λ_scaled!(Δ, J, D, f, maxiters, θ=1e-4)
     return λ, p
 end
 
+function find_λ_v2!(Δ, qrls, f, maxiters, θ=1e-4)
+    l₀ = 0.0
+    u₀ = norm(qrls.R'qrls.Q'*f)/Δ
+    λ₀ = max(1e-3*u₀,√(l₀*u₀))
+    λ = λ₀
+    uₖ = u₀
+    lₖ = l₀
+    n = size(qrls.R, 2) # number of parameters
+    m = size(qrls.Q, 1) #number of data pojnts
+    if m > n # full R is tall
+        R = [qrls.R; zeros(m-n,n)]
+    # elseif n > m # full R is wide
+    #     R = [qrls.R zeros(m,n-m)]
+    else # same size
+        R = qrls.R
+    end
+    p = zeros(n)
+    for i in 1:maxiters
+        qrλ = qr([R; √(λ)*qrls.P])
+        Q_aug1 = [qrls.Q zeros(m,n); zeros(n,m) I(n)]
+        b_aug = [-f; zeros(n)]
+        Q_aug = Q_aug1 * qrλ.Q
+        # permuted p is just the solution of the
+        #    augmented system:
+        p = UpperTriangular(qrλ.R)\(Q_aug' * b_aug)[1:n]
+        #p = qr_regularized_solve(qrλ, -f, λ)
+        if (1-θ)*Δ < norm(p) < (1+θ)*Δ
+            break
+        end
+        ϕ = norm(p)-Δ
+        if ϕ < 0
+            uₖ = λ
+        else
+            lₖ = λ
+        end
+        dpdλ = UpperTriangular(qrλ.R) \ (LowerTriangular(qrλ.R') \ -p)
+        λ = λ - (norm(p)-Δ)/Δ*(p'p)/(p'dpdλ)
+        if !(uₖ < λ <= lₖ)
+            λ = max(lₖ+0.01*(uₖ-lₖ),√(lₖ*uₖ))
+        end
+        #lₖ = maximum([lₖ, λ])
+    end
+    println("Final step norm: ", norm(p))
+    return λ, qrls.P*p
+end
+
 # function find_λ2!(Δ, J, f, maxiters, θ=1e-4, D, D_inv)
 #     l₀ = 0.0
 #     u₀ = norm(D_inv*J'*f)/Δ

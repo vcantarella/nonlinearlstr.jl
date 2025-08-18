@@ -138,7 +138,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
         lb = repeat([-Inf], inner=prob_data.m)
         ub = repeat([Inf], inner=prob_data.m)
         start_time = time()
-        if solver_name in ["QR-NLLS", "QR-NLLS-scaled", "LM-TR", "LM-TR-scaled"]
+        if solver_name in ["QR-NLLS", "QR-NLLS-scaled",
+            "LM-TR", "LM-TR-scaled", "LM-TR-v2", "LM-FAN-LU", "SVD-LMTR"]
             # Use residual-Jacobian interface
             result = solver_func(
                 prob_data.residual_func, prob_data.jacobian_func, 

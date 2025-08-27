@@ -6,8 +6,6 @@ using ForwardDiff
 using Pkg
 using Revise
 using NonlinearSolve
-
-Pkg.develop(PackageSpec(path="/Users/vcantarella/.julia/dev/nonlinearlstr"))
 using nonlinearlstr
 
 
@@ -24,8 +22,10 @@ f = -J * p_true + 0.1 * randn(m) # Add some noise
 # Remember your code solves for (J'J+λI)p = J'b, but we need (J'J+λI)p = -J'f
 # So we set b = -f
 function get_p(J, f, λ)
-    p = nonlinearlstr.qr_regularized_solve(J, -f, λ)
-    return p
+    n = size(J, 2)
+    J_aug = [J; sqrt(λ) * I(n)]
+    b = [-f; zeros(n)]
+    return J_aug \ b
 end
 
 p = get_p(J, f, λ)

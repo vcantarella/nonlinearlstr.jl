@@ -8,35 +8,28 @@ using Pkg, Revise
 using DataFrames, CSV, CairoMakie
 using LinearAlgebra, Statistics
 using Tidier
-
-Pkg.develop(PackageSpec(path="/Users/vcantarella/.julia/dev/nonlinearlstr"))
 using nonlinearlstr
 include("nlls_problems_prep.jl")
 
 nls_problems = find_nlls_problems(999)
-#cutest_problems = find_cutest_nlls_problems(999)
 
 
 solvers = [
-        ("QR-NLLS", nonlinearlstr.qr_nlss_trust_region),
         ("LM-TR", nonlinearlstr.lm_trust_region),
-        ("LM-TR-v2", nonlinearlstr.lm_trust_region_v2),
         ("LM-TR-scaled", nonlinearlstr.lm_trust_region_scaled),
-        ("LM-FAN-LU", nonlinearlstr.lm_fan_lu),
-        ("SVD-LMTR", nonlinearlstr.svd_trust_region),
+        ("SVD-LM-TR", nonlinearlstr.lm_svd_trust_region),
         ("PRIMA-NEWUOA", nothing),  # Special handling
         ("PRIMA-BOBYQA", nothing),  # Special handling
-        ("NL-TrustRegion", NonlinearSolve.TrustRegion),  # Special handling
-        ("NL-LevenbergMarquardt", NonlinearSolve.LevenbergMarquardt),  # Special handling
-        ("NL-GaussNewton", NonlinearSolve.GaussNewton),  # Special handling
-        ("NL-PolyAlg", NonlinearSolve.FastShortcutNLLSPolyalg),  # Special handling
-        ("TRON", tron),  # Special handling
-        ("TRUNK", trunk),  # Special handling
+        ("NonlinearSolve-TrustRegion", NonlinearSolve.TrustRegion),  # Special handling
+        ("NonlinearSolve-LevenbergMarquardt", NonlinearSolve.LevenbergMarquardt),  # Special handling
+        ("NonlinearSolve-GaussNewton", NonlinearSolve.GaussNewton),  # Special handling
+        ("NonlinearSolve-PolyAlg", NonlinearSolve.FastShortcutNLLSPolyalg),  # Special handling
+        ("JSO-TRON", tron),  # Special handling
+        ("JSO-TRUNK", trunk),  # Special handling
         ("LSO-DogLeg-QR", LeastSquaresOptim.Dogleg(LeastSquaresOptim.QR())),
         ("LSO-Levenberg-QR", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.QR())),
         ("LSO-DogLeg-chol", LeastSquaresOptim.Dogleg(LeastSquaresOptim.Cholesky())),
         ("LSO-Levenberg-chol", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.Cholesky())),
-        #("Enlsip", nothing)
     ]
 
 nls_results = nlls_benchmark(nls_problems, solvers, max_iter=400)
@@ -47,9 +40,10 @@ df_nls = DataFrame(nls_results)
 
 df_nls_proc = @chain df_nls begin
     @group_by(problem)
-    @mutate(min_solution = max(0, minimum(final_objective)))
+    #@filter(final_objective .> 0)
+    @mutate(min_solution = minimum(final_objective))
     @ungroup
-    @mutate(final_close = ifelse((abs(final_objective - min_solution) <= 1e-4) & (final_objective >= 0.0),
+    @mutate(final_close = ifelse((abs(final_objective - min_solution) <= 1e-4),
         true, false))
 end
 
@@ -57,18 +51,18 @@ end
 @chain df_nls_proc begin
     @group_by(solver)
     @summarize(
-        converged = sum(final_close)/maximum(final_close),
+        converged = sum(final_close)/n(),
         iterations = median(iterations),
         mean_objective = mean(final_objective),
         std_objective = std(final_objective),
-        mean_execution_time = mean(time)
+        mean_execution_time = median(time)
     )
     @arrange(desc(converged))
 end
 
 #Check and return the problems where the performance with QR-NLLS is bad
 df_nls_bad = @chain df_nls_proc begin
-    @filter(solver == "LM-TR-v2")
+    @filter(solver == "LM-TR")
     @filter(final_close == false)
 end
 

@@ -5,8 +5,6 @@ using DataFrames, CSV, CairoMakie
 using LeastSquaresOptim
 using ForwardDiff
 using LinearAlgebra, Statistics
-
-Pkg.develop(PackageSpec(path="/Users/vcantarella/.julia/dev/nonlinearlstr"))
 using nonlinearlstr
 
 # Hard Problems in Luksan, 1995
@@ -64,7 +62,6 @@ function build_problems(resf, x0)
 end
 
 solvers = solvers = [
-        ("QR-NLLS", nonlinearlstr.qr_nlss_trust_region),
         ("LM-TR", nonlinearlstr.lm_trust_region),
         ("LM-TR-scaled", nonlinearlstr.lm_trust_region_scaled),
         ("PRIMA-NEWUOA", PRIMA.newuoa),  # Special handling

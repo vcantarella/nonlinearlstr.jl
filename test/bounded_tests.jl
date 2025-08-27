@@ -85,59 +85,82 @@ probs = find_bounded_problems()
 nls_functions = [create_nls_functions(eval(prob_name)()) for prob_name in probs]
 
 prob_data = nls_functions[1]  # Use the first problem for testing
-result = nonlinearlstr.bounded_gauss_newton(
+result = nonlinearlstr.lm_double_trust_region(
                 prob_data.residual_func, prob_data.jacobian_func, 
-                prob_data.x0, prob_data.bl, prob_data.bu,;
-                max_iter=100, gtol=1e-8
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=300, gtol=1e-8
             )
-x_opt, r_opt, g_opt, iterations = result
-final_obj = 0.5 * dot(r_opt, r_opt)
-converged = norm(g_opt, 2) < 1e-6 
+result = nonlinearlstr.lm_interior_and_trust_region(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=300, gtol=1e-8
+)
 
-result_tr = nonlinearlstr.bounded_trust_region(
+# x_opt, r_opt, g_opt, iterations = result
+# final_obj = 0.5 * dot(r_opt, r_opt)
+# converged = norm(g_opt, 2) < 1e-6 
+prob_data = nls_functions[2]  # Use the first problem for testing
+result = nonlinearlstr.lm_double_trust_region(
                 prob_data.residual_func, prob_data.jacobian_func, 
-                prob_data.x0, prob_data.bl, prob_data.bu,;
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=100, gtol=1e-8
             )
+result = nonlinearlstr.lm_interior_and_trust_region(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
+result_tron = tron(eval(probs[2])())
+result_tron
+x_opt = result_tron.solution
+final_obj = prob_data.obj_func(x_opt)
+g_opt = prob_data.grad_func(x_opt)
+iterations = result_tron.iter
+converged = result_tron.status == :first_order
+# result_tr = nonlinearlstr.bounded_trust_region(
+#                 prob_data.residual_func, prob_data.jacobian_func, 
+#                 prob_data.x0, prob_data.bl, prob_data.bu,;
+#                 max_iter=100, gtol=1e-8
+#             )
 
-result_fk = nonlinearlstr.fake_trust_region_reflective(
-                prob_data.residual_func, prob_data.jacobian_func, 
-                prob_data.x0, prob_data.bl, prob_data.bu,;
-                max_iter=100, gtol=1e-8
-            )
-x_opt, r_opt, g_opt, iterations = result
-final_obj = 0.5 * dot(r_opt, r_opt)
-converged = norm(g_opt, 2) < 1e-6 
+# result_fk = nonlinearlstr.fake_trust_region_reflective(
+#                 prob_data.residual_func, prob_data.jacobian_func, 
+#                 prob_data.x0, prob_data.bl, prob_data.bu,;
+#                 max_iter=100, gtol=1e-8
+#             )
+# x_opt, r_opt, g_opt, iterations = result
+# final_obj = 0.5 * dot(r_opt, r_opt)
+# converged = norm(g_opt, 2) < 1e-6 
 
 lsresults = []
-for prob_data in nls_functions
-    result = nonlinearlstr.bounded_gauss_newton(
-                prob_data.residual_func, prob_data.jacobian_func, 
-                prob_data.x0, prob_data.bl, prob_data.bu,;
-                max_iter=50, gtol=1e-8
-            )
-    x_opt, r_opt, g_opt, iterations = result
-    results = (x_opt=x_opt, r_opt=r_opt, g_opt=g_opt, iterations=iterations)
-    final_obj = 0.5 * dot(r_opt, r_opt)
-    converged = norm(g_opt, 2) < 1e-6
-    solver = "Gauss-Newton"
-    final_result = merge(results, (solver=solver, converged=converged, final_obj=final_obj))
-    push!(lsresults, final_result)
-    println("Problem: $(prob_data.name)")
-    println("  Optimal x: $(x_opt)")
-    println("  Final residual norm: $(norm(r_opt, 2))")
-    println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
-        prob_data.residual_func(prob_data.x0)))")
-    println("  Final objective value: $final_obj")
-    println("  Number of iterations: $iterations")
-    println("  Converged: $converged")
-end
+# for prob_data in nls_functions
+#     result = nonlinearlstr.bounded_gauss_newton(
+#                 prob_data.residual_func, prob_data.jacobian_func, 
+#                 prob_data.x0, prob_data.bl, prob_data.bu,;
+#                 max_iter=50, gtol=1e-8
+#             )
+#     x_opt, r_opt, g_opt, iterations = result
+#     results = (x_opt=x_opt, r_opt=r_opt, g_opt=g_opt, iterations=iterations)
+#     final_obj = 0.5 * dot(r_opt, r_opt)
+#     converged = norm(g_opt, 2) < 1e-6
+#     solver = "Gauss-Newton"
+#     final_result = merge(results, (solver=solver, converged=converged, final_obj=final_obj))
+#     push!(lsresults, final_result)
+#     println("Problem: $(prob_data.name)")
+#     println("  Optimal x: $(x_opt)")
+#     println("  Final residual norm: $(norm(r_opt, 2))")
+#     println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
+#         prob_data.residual_func(prob_data.x0)))")
+#     println("  Final objective value: $final_obj")
+#     println("  Number of iterations: $iterations")
+#     println("  Converged: $converged")
+# end
 
 for prob_data in nls_functions
-    result = nonlinearlstr.bounded_trust_region(
+    result = nonlinearlstr.lm_double_trust_region(
                 prob_data.residual_func, prob_data.jacobian_func, 
-                prob_data.x0, prob_data.bl, prob_data.bu,;
-                max_iter=100, gtol=1e-8
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=300, gtol=1e-8
             )
     x_opt, r_opt, g_opt, iterations = result
     results = (x_opt=x_opt, r_opt=r_opt, g_opt=g_opt, iterations=iterations)
@@ -157,28 +180,28 @@ for prob_data in nls_functions
 end
 
 
-for prob_data in nls_functions
-    result = nonlinearlstr.fake_trust_region_reflective(
-                prob_data.residual_func, prob_data.jacobian_func, 
-                prob_data.x0, prob_data.bl, prob_data.bu,;
-                max_iter=100, gtol=1e-8
-            )
-    x_opt, r_opt, g_opt, iterations = result
-    results = (x_opt=x_opt, r_opt=r_opt, g_opt=g_opt, iterations=iterations)
-    final_obj = 0.5 * dot(r_opt, r_opt)
-    converged = norm(g_opt, 2) < 1e-6
-    solver = "Fake-Trust-Region-Reflective"
-    final_result = merge(results, (solver=solver, converged=converged, final_obj=final_obj))
-    push!(lsresults, final_result)
-    println("Problem: $(prob_data.name)")
-    println("  Optimal x: $(x_opt)")
-    println("  Final residual norm: $(norm(r_opt, 2))")
-    println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
-        prob_data.residual_func(prob_data.x0)))")
-    println("  Final objective value: $final_obj")
-    println("  Number of iterations: $iterations")
-    println("  Converged: $converged")
-end
+# for prob_data in nls_functions
+#     result = nonlinearlstr.fake_trust_region_reflective(
+#                 prob_data.residual_func, prob_data.jacobian_func, 
+#                 prob_data.x0, prob_data.bl, prob_data.bu,;
+#                 max_iter=100, gtol=1e-8
+#             )
+#     x_opt, r_opt, g_opt, iterations = result
+#     results = (x_opt=x_opt, r_opt=r_opt, g_opt=g_opt, iterations=iterations)
+#     final_obj = 0.5 * dot(r_opt, r_opt)
+#     converged = norm(g_opt, 2) < 1e-6
+#     solver = "Fake-Trust-Region-Reflective"
+#     final_result = merge(results, (solver=solver, converged=converged, final_obj=final_obj))
+#     push!(lsresults, final_result)
+#     println("Problem: $(prob_data.name)")
+#     println("  Optimal x: $(x_opt)")
+#     println("  Final residual norm: $(norm(r_opt, 2))")
+#     println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
+#         prob_data.residual_func(prob_data.x0)))")
+#     println("  Final objective value: $final_obj")
+#     println("  Number of iterations: $iterations")
+#     println("  Converged: $converged")
+# end
 
 df = DataFrame(lsresults)
 

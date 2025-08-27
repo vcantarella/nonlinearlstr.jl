@@ -31,24 +31,11 @@ hess_func(x) = begin
     return J' * J
 end
 
-res = nonlinearlstr.qr_nlss_trust_region(
-    residual_func, jacobian_func, x0;
-    max_iter = 100, gtol = 1e-8,
-)
-
 res2 = nonlinearlstr.lm_trust_region(
     residual_func, jacobian_func, x0;
     max_iter = 100, gtol = 1e-8,
 )
 
-res3 = nonlinearlstr.lm_trust_region_v2(
-    residual_func, jacobian_func, x0;
-    max_iter = 100, gtol = 1e-8,
-)
-res4 = nonlinearlstr.lm_fan_lu(
-    residual_func, jacobian_func, x0;
-    max_iter = 100, gtol = 1e-8,
-)
 
 nlp = eval(:tp210)()
 x0 = copy(nlp.meta.x0)
@@ -68,10 +55,6 @@ hess_func(x) = begin
     return J' * J
 end
 
-res = nonlinearlstr.qr_nlss_trust_region(
-    residual_func, jacobian_func, x0;
-    max_iter = 500, gtol = 1e-8
-)
 res2 = nonlinearlstr.lm_trust_region(
     residual_func, jacobian_func, x0;
     max_iter = 500, gtol = 1e-8

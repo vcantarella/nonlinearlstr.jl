@@ -1,15 +1,15 @@
-using CUTEst
-using NLPModels
-using Enlsip
 using NLSProblems
 using JSOSolvers
 using PRIMA
 using NonlinearSolve
+using NLPModels: bound_constrained, finalize, AbstractNLSModel, residual, jac_residual, obj, grad
 using Pkg, Revise
 using DataFrames, CSV, CairoMakie
 using LeastSquaresOptim
 using Tidier
 using LinearAlgebra, Statistics
+using PythonCall
+scipy = pyimport("scipy")
 
 Pkg.develop(PackageSpec(path="/Users/vcantarella/.julia/dev/nonlinearlstr"))
 using nonlinearlstr
@@ -95,7 +95,19 @@ result = nonlinearlstr.lm_interior_and_trust_region(
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=300, gtol=1e-8
 )
+result = nonlinearlstr.lm_trust_region_reflective(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
+result = nonlinearlstr.lm_trust_region_reflective_v2(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
 
+pyresult = scipy.optimize.least_squares(prob_data.residual_func, prob_data.x0, jac=prob_data.jacobian_func, bounds=(prob_data.bl, prob_data.bu),
+    xtol=1e-8, gtol=1e-8, max_nfev=1000, verbose=2)
 # x_opt, r_opt, g_opt, iterations = result
 # final_obj = 0.5 * dot(r_opt, r_opt)
 # converged = norm(g_opt, 2) < 1e-6 
@@ -110,6 +122,48 @@ result = nonlinearlstr.lm_interior_and_trust_region(
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=100, gtol=1e-8
 )
+result = nonlinearlstr.lm_trust_region_reflective(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
+result = nonlinearlstr.lm_trust_region_reflective_v2(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
+
+result_tron = tron(eval(probs[2])())
+result_tron
+x_opt = result_tron.solution
+final_obj = prob_data.obj_func(x_opt)
+g_opt = prob_data.grad_func(x_opt)
+iterations = result_tron.iter
+converged = result_tron.status == :first_order
+
+
+prob_data = nls_functions[end]  # Use the first problem for testing
+result = nonlinearlstr.lm_double_trust_region(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+            )
+result = nonlinearlstr.lm_interior_and_trust_region(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
+result = nonlinearlstr.lm_trust_region_reflective(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
+result = nonlinearlstr.lm_trust_region_reflective_v2(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
+
 result_tron = tron(eval(probs[2])())
 result_tron
 x_opt = result_tron.solution
@@ -132,6 +186,149 @@ converged = result_tron.status == :first_order
 # final_obj = 0.5 * dot(r_opt, r_opt)
 # converged = norm(g_opt, 2) < 1e-6 
 
+# --- Main Execution ---
+
+# 1. Find and prepare problems
+probs = find_bounded_problems()
+lsresults = []
+gtol = 1e-6
+
+# 2. Loop through problems and run all solvers
+for prob_name in probs
+    println("--- Running Problem: $(prob_name) ---")
+    
+    # Create the NLPModels object for JSOSolvers
+    prob_nlp = eval(prob_name)()
+    # Create a separate struct with function handles for our solvers
+    prob_data = create_nls_functions(prob_nlp)
+
+    # --- Solver 1: lm_double_trust_region ---
+    try
+        result_dtr = nonlinearlstr.lm_double_trust_region(
+            prob_data.residual_func, prob_data.jacobian_func, 
+            prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+            max_iter=300, gtol=gtol
+        )
+        x_opt, r_opt, g_opt, iterations = result_dtr
+        final_obj = 0.5 * dot(r_opt, r_opt)
+        converged = norm(g_opt, 2) < gtol
+        push!(lsresults, (problem=prob_data.name, solver="Double-TR", converged=converged, final_obj=final_obj, iterations=iterations))
+    catch e
+        println("  Double-TR failed: $e")
+        push!(lsresults, (problem=prob_data.name, solver="Double-TR", converged=false, final_obj=Inf, iterations=0))
+    end
+
+    # --- Solver 2: lm_interior_and_trust_region ---
+    try
+        result_itr = nonlinearlstr.lm_interior_and_trust_region(
+            prob_data.residual_func, prob_data.jacobian_func, 
+            prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+            max_iter=300, gtol=gtol
+        )
+        x_opt, r_opt, g_opt, iterations = result_itr
+        final_obj = 0.5 * dot(r_opt, r_opt)
+        converged = norm(g_opt, 2) < gtol
+        push!(lsresults, (problem=prob_data.name, solver="Interior-TR", converged=converged, final_obj=final_obj, iterations=iterations))
+    catch e
+        println("  Interior-TR failed: $e")
+        push!(lsresults, (problem=prob_data.name, solver="Interior-TR", converged=false, final_obj=Inf, iterations=0))
+    end
+
+    # --- Solver 3: lm_trust_region_reflective ---
+    try
+        result_itr = nonlinearlstr.lm_trust_region_reflective(
+            prob_data.residual_func, prob_data.jacobian_func, 
+            prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+            max_iter=300, gtol=gtol
+        )
+        x_opt, r_opt, g_opt, iterations = result_itr
+        final_obj = 0.5 * dot(r_opt, r_opt)
+        converged = norm(g_opt, 2) < gtol
+        push!(lsresults, (problem=prob_data.name, solver="TRF", converged=converged, final_obj=final_obj, iterations=iterations))
+    catch e
+        println("  TRF failed: $e")
+        push!(lsresults, (problem=prob_data.name, solver="TRF", converged=false, final_obj=Inf, iterations=0))
+    end
+
+    # --- Solver 4: lm_trust_region_reflective ---
+    try
+        result_itr = nonlinearlstr.lm_trust_region_reflective_v2(
+            prob_data.residual_func, prob_data.jacobian_func, 
+            prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+            max_iter=300, gtol=gtol
+        )
+        x_opt, r_opt, g_opt, iterations = result_itr
+        final_obj = 0.5 * dot(r_opt, r_opt)
+        converged = norm(g_opt, 2) < gtol
+        push!(lsresults, (problem=prob_data.name, solver="TRFv2", converged=converged, final_obj=final_obj, iterations=iterations))
+    catch e
+        println("TRFv2 failed: $e")
+        push!(lsresults, (problem=prob_data.name, solver="TRFv2", converged=false, final_obj=Inf, iterations=0))
+    end
+
+    # --- Solver 5: JSOSolvers.tron (Benchmark) ---
+    try
+        result_tron = tron(prob_nlp, atol=gtol, rtol=gtol)
+        final_obj = result_tron.objective
+        converged = result_tron.status == :first_order
+        push!(lsresults, (problem=prob_data.name, solver="tron (JSO)", converged=converged, final_obj=final_obj, iterations=result_tron.iter))
+    catch e
+        println("tron (JSO) failed: $e")
+        push!(lsresults, (problem=prob_data.name, solver="tron (JSO)", converged=false, final_obj=Inf, iterations=0))
+    end
+
+    # --- Solver 5: SCIPY (Benchmark) ---
+    try
+        result_scipy = scipy.optimize.least_squares(prob_data.residual_func, prob_data.x0, jac=prob_data.jacobian_func, bounds=(prob_data.bl, prob_data.bu),
+            xtol=1e-8, gtol=1e-8, max_nfev=1000, verbose=2)
+        x = pyconvert(Vector{Float64}, result_scipy.x)
+        final_obj = 0.5 * dot(prob_data.residual_func(x), prob_data.residual_func(x))
+        converged = pyconvert(Bool, result_scipy.success) == true
+        push!(lsresults, (problem=prob_data.name, solver="scipy", converged=converged, final_obj=final_obj, iterations=pyconvert(Int, result_scipy.nfev)))
+    catch e
+        println("  SCIPY failed: $e")
+        push!(lsresults, (problem=prob_data.name, solver="scipy", converged=false, final_obj=Inf, iterations=0))
+    end
+    # Finalize the NLPModels object to free resources
+    finalize(prob_nlp)
+end
+
+# 3. Create a DataFrame and analyze results with Tidier
+df = DataFrame(lsresults)
+
+# Find the best objective for each problem to calculate a performance ratio
+df_best = @chain df begin
+    @group_by(problem)
+    @summarize(best_obj = minimum(final_obj))
+end
+
+# Join the best objective back to the main dataframe
+df_perf = @chain df begin
+    @left_join(df_best, problem)
+    @mutate(practical_convergence = abs.(final_obj .- best_obj) .< 1e-6)
+end
+
+println("\n\n" * "="^60)
+println("SOLVER PERFORMANCE SUMMARY")
+println("="^60)
+
+# Use Tidier to create a summary table
+summary_table = @chain df_perf begin
+    @group_by(solver)
+    @summarize(
+        n_problems = n(),
+        n_converged = sum(practical_convergence),
+        median_iters = median(iterations),
+    )
+    @mutate(
+        success_rate = round(100 * n_converged / n_problems, digits = 2)
+    )
+    @select(solver, success_rate, n_converged, median_iters)
+end
+
+# Print the summary table
+println(summary_table)
+println("\n'median_perf_ratio' is the median of (final_obj / best_obj_for_this_problem). Lower is better (1.0 is best).")
 lsresults = []
 # for prob_data in nls_functions
 #     result = nonlinearlstr.bounded_gauss_newton(

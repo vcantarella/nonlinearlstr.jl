@@ -14,7 +14,7 @@ scipy = pyimport("scipy")
 Pkg.develop(PackageSpec(path="/Users/vcantarella/.julia/dev/nonlinearlstr"))
 using nonlinearlstr
 
-function find_bounded_problems(max_vars=50)
+function find_bounded_problems(max_vars=Inf)
     """Find bounded NLS problems from NLSProblems.jl package"""
     # Get all available NLS problems
     all_problems = setdiff(names(NLSProblems), [:NLSProblems])
@@ -134,6 +134,11 @@ result = nonlinearlstr.active_set_svd_trust_region(
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=100, gtol=1e-8
 )
+result = nonlinearlstr.active_set_svd_trust_region_scaled(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
 result_tron = tron(eval(probs[2])())
 result_tron
 x_opt = result_tron.solution
@@ -160,6 +165,20 @@ result = nonlinearlstr.lm_trust_region_reflective_v2(
                 max_iter=100, gtol=1e-8
 )
 result = nonlinearlstr.active_set_svd_trust_region(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
+
+prob_data = create_nls_functions(eval(:tp242)())
+
+result = nonlinearlstr.active_set_svd_trust_region(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
+
+result = nonlinearlstr.active_set_svd_trust_region_scaled(
                 prob_data.residual_func, prob_data.jacobian_func, 
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=100, gtol=1e-8
@@ -281,6 +300,22 @@ for prob_name in probs
     catch e
         println("active set solver failed: $e")
         push!(lsresults, (problem=prob_data.name, solver="active_set_svd_trust_region", converged=false, final_obj=Inf, iterations=0))
+    end
+
+     # --- Solver 6: active_set_svd_trust_region_scaled ---
+    try
+        result_itr = nonlinearlstr.active_set_svd_trust_region_scaled(
+            prob_data.residual_func, prob_data.jacobian_func, 
+            prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+            max_iter=300, gtol=gtol
+        )
+        x_opt, r_opt, g_opt, iterations = result_itr
+        final_obj = 0.5 * dot(r_opt, r_opt)
+        converged = norm(g_opt, 2) < gtol
+        push!(lsresults, (problem=prob_data.name, solver="active_set_svd_trust_region_scaled", converged=converged, final_obj=final_obj, iterations=iterations))
+    catch e
+        println("active set scaled solver failed: $e")
+        push!(lsresults, (problem=prob_data.name, solver="active_set_svd_trust_region_scaled", converged=false, final_obj=Inf, iterations=0))
     end
 
     # --- Solver 6: JSOSolvers.tron (Benchmark) ---
@@ -413,86 +448,4 @@ if nrow(problem_difficulty) > 0
     end
 else
     println("No problems failed for multiple solvers - good solver robustness!")
-end
-
-lsresults = []
-# for prob_data in nls_functions
-#     result = nonlinearlstr.bounded_gauss_newton(
-#                 prob_data.residual_func, prob_data.jacobian_func, 
-#                 prob_data.x0, prob_data.bl, prob_data.bu,;
-#                 max_iter=50, gtol=1e-8
-#             )
-#     x_opt, r_opt, g_opt, iterations = result
-#     results = (x_opt=x_opt, r_opt=r_opt, g_opt=g_opt, iterations=iterations)
-#     final_obj = 0.5 * dot(r_opt, r_opt)
-#     converged = norm(g_opt, 2) < 1e-6
-#     solver = "Gauss-Newton"
-#     final_result = merge(results, (solver=solver, converged=converged, final_obj=final_obj))
-#     push!(lsresults, final_result)
-#     println("Problem: $(prob_data.name)")
-#     println("  Optimal x: $(x_opt)")
-#     println("  Final residual norm: $(norm(r_opt, 2))")
-#     println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
-#         prob_data.residual_func(prob_data.x0)))")
-#     println("  Final objective value: $final_obj")
-#     println("  Number of iterations: $iterations")
-#     println("  Converged: $converged")
-# end
-
-for prob_data in nls_functions
-    result = nonlinearlstr.lm_double_trust_region(
-                prob_data.residual_func, prob_data.jacobian_func, 
-                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
-                max_iter=300, gtol=1e-8
-            )
-    x_opt, r_opt, g_opt, iterations = result
-    results = (x_opt=x_opt, r_opt=r_opt, g_opt=g_opt, iterations=iterations)
-    final_obj = 0.5 * dot(r_opt, r_opt)
-    converged = norm(g_opt, 2) < 1e-6 
-    solver = "Bounded-Trust-Region"
-    final_result = merge(results, (solver=solver, converged=converged, final_obj=final_obj))
-    push!(lsresults, final_result)
-    println("Problem: $(prob_data.name)")
-    println("  Optimal x: $(x_opt)")
-    println("  Final residual norm: $(norm(r_opt, 2))")
-    println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
-        prob_data.residual_func(prob_data.x0)))")
-    println("  Final objective value: $final_obj")
-    println("  Number of iterations: $iterations")
-    println("  Converged: $converged")
-end
-
-
-# for prob_data in nls_functions
-#     result = nonlinearlstr.fake_trust_region_reflective(
-#                 prob_data.residual_func, prob_data.jacobian_func, 
-#                 prob_data.x0, prob_data.bl, prob_data.bu,;
-#                 max_iter=100, gtol=1e-8
-#             )
-#     x_opt, r_opt, g_opt, iterations = result
-#     results = (x_opt=x_opt, r_opt=r_opt, g_opt=g_opt, iterations=iterations)
-#     final_obj = 0.5 * dot(r_opt, r_opt)
-#     converged = norm(g_opt, 2) < 1e-6
-#     solver = "Fake-Trust-Region-Reflective"
-#     final_result = merge(results, (solver=solver, converged=converged, final_obj=final_obj))
-#     push!(lsresults, final_result)
-#     println("Problem: $(prob_data.name)")
-#     println("  Optimal x: $(x_opt)")
-#     println("  Final residual norm: $(norm(r_opt, 2))")
-#     println("  Initial objective value: $(0.5 * dot(prob_data.residual_func(prob_data.x0),
-#         prob_data.residual_func(prob_data.x0)))")
-#     println("  Final objective value: $final_obj")
-#     println("  Number of iterations: $iterations")
-#     println("  Converged: $converged")
-# end
-
-df = DataFrame(lsresults)
-
-@chain df begin
-    @group_by solver
-    @summarize(
-        iters = median(iterations),
-        converged = sum(converged),
-        mean_obj = mean(final_obj),
-    )
 end

@@ -79,6 +79,7 @@ function solve_bounded_subproblemm(J, f, radius, lb, ub, maxiters=20)
     
     #trial solution
     λ, δ = solve_substep(J, f, radius)
+    δ .= clamp.(δ, lb, ub) # enforce bounds
     # evaluate the inactive set
     Jδ = J * δ
     g = J'*(Jδ + f) # gradient ∇ₓ of ½‖f + Jδ‖²
@@ -88,7 +89,10 @@ function solve_bounded_subproblemm(J, f, radius, lb, ub, maxiters=20)
     active = map(!, inactive)
     δprev = copy(δ)
     for iter = 1:maxiters
-        λa, δa = solve_substep(J[:,inactive], f + J[:,active]*δ[active], radius)
+        currentΔ = norm(δ)
+        radius_remaining = sqrt(max(0, radius^2 - currentΔ^2))
+        radius_remaining == 0 && return λ, δ # no more room to move
+        λa, δa = solve_substep(J[:,inactive], f + J[:,active]*δ[active], radius_remaining)
         δ[inactive] = δa
         @. δ = clamp(δ, lb, ub)
         λ += λa # update the Lagrange multipliers (not sure if this is correct)

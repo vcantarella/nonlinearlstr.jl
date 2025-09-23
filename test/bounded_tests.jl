@@ -95,12 +95,14 @@ result = nonlinearlstr.lm_interior_and_trust_region(
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=300, gtol=1e-8
 )
-result = nonlinearlstr.lm_trust_region_reflective(
+
+result = nonlinearlstr.lm_trust_region_reflective_v2(
                 prob_data.residual_func, prob_data.jacobian_func, 
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=100, gtol=1e-8
 )
-result = nonlinearlstr.lm_trust_region_reflective_v2(
+
+result = nonlinearlstr.active_set_svd_trust_region(
                 prob_data.residual_func, prob_data.jacobian_func, 
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=100, gtol=1e-8
@@ -122,17 +124,16 @@ result = nonlinearlstr.lm_interior_and_trust_region(
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=100, gtol=1e-8
 )
-result = nonlinearlstr.lm_trust_region_reflective(
-                prob_data.residual_func, prob_data.jacobian_func, 
-                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
-                max_iter=100, gtol=1e-8
-)
 result = nonlinearlstr.lm_trust_region_reflective_v2(
                 prob_data.residual_func, prob_data.jacobian_func, 
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=100, gtol=1e-8
 )
-
+result = nonlinearlstr.active_set_svd_trust_region(
+                prob_data.residual_func, prob_data.jacobian_func, 
+                prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+                max_iter=100, gtol=1e-8
+)
 result_tron = tron(eval(probs[2])())
 result_tron
 x_opt = result_tron.solution
@@ -153,12 +154,12 @@ result = nonlinearlstr.lm_interior_and_trust_region(
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=100, gtol=1e-8
 )
-result = nonlinearlstr.lm_trust_region_reflective(
+result = nonlinearlstr.lm_trust_region_reflective_v2(
                 prob_data.residual_func, prob_data.jacobian_func, 
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=100, gtol=1e-8
 )
-result = nonlinearlstr.lm_trust_region_reflective_v2(
+result = nonlinearlstr.active_set_svd_trust_region(
                 prob_data.residual_func, prob_data.jacobian_func, 
                 prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
                 max_iter=100, gtol=1e-8
@@ -266,7 +267,23 @@ for prob_name in probs
         push!(lsresults, (problem=prob_data.name, solver="TRFv2", converged=false, final_obj=Inf, iterations=0))
     end
 
-    # --- Solver 5: JSOSolvers.tron (Benchmark) ---
+    # --- Solver 5: active_set_svd_trust_region ---
+    try
+        result_itr = nonlinearlstr.active_set_svd_trust_region(
+            prob_data.residual_func, prob_data.jacobian_func, 
+            prob_data.x0; lb=prob_data.bl, ub=prob_data.bu,
+            max_iter=300, gtol=gtol
+        )
+        x_opt, r_opt, g_opt, iterations = result_itr
+        final_obj = 0.5 * dot(r_opt, r_opt)
+        converged = norm(g_opt, 2) < gtol
+        push!(lsresults, (problem=prob_data.name, solver="active_set_svd_trust_region", converged=converged, final_obj=final_obj, iterations=iterations))
+    catch e
+        println("active set solver failed: $e")
+        push!(lsresults, (problem=prob_data.name, solver="active_set_svd_trust_region", converged=false, final_obj=Inf, iterations=0))
+    end
+
+    # --- Solver 6: JSOSolvers.tron (Benchmark) ---
     try
         result_tron = tron(prob_nlp, atol=gtol, rtol=gtol)
         final_obj = result_tron.objective
@@ -277,7 +294,7 @@ for prob_name in probs
         push!(lsresults, (problem=prob_data.name, solver="tron (JSO)", converged=false, final_obj=Inf, iterations=0))
     end
 
-    # --- Solver 5: SCIPY (Benchmark) ---
+    # --- Solver 7: SCIPY (Benchmark) ---
     try
         result_scipy = scipy.optimize.least_squares(prob_data.residual_func, prob_data.x0, jac=prob_data.jacobian_func, bounds=(prob_data.bl, prob_data.bu),
             xtol=1e-8, gtol=1e-8, max_nfev=1000, verbose=2)
@@ -329,6 +346,75 @@ end
 # Print the summary table
 println(summary_table)
 println("\n'median_perf_ratio' is the median of (final_obj / best_obj_for_this_problem). Lower is better (1.0 is best).")
+
+# For the solvers with more than 70% performance, show which problems they failed 
+# and how far they were from the best objective
+println("\n" * "="^60)
+println("DETAILED FAILURE ANALYSIS FOR HIGH-PERFORMING SOLVERS")
+println("="^60)
+
+for row in eachrow(summary_table)
+    if row.success_rate >= 70  # Changed from < 70 to >= 70
+        println("\nSolver '$(row.solver)' had a success rate of $(row.success_rate)%. Failed problems:")
+        
+        # Use regular DataFrames filtering instead of Tidier inside the loop
+        failed_problems = df_perf[
+            (df_perf.solver .== row.solver) .& (.!df_perf.practical_convergence), 
+            [:problem, :final_obj, :best_obj]
+        ]
+        
+        # Add the ratio and difference columns
+        failed_problems.ratio = failed_problems.final_obj ./ failed_problems.best_obj
+        failed_problems.obj_diff = failed_problems.final_obj .- failed_problems.best_obj
+        
+        # Sort by worst performance first
+        sort!(failed_problems, :ratio, rev=true)
+        
+        if nrow(failed_problems) == 0
+            println("  → No failed problems! Perfect solver performance.")
+        else
+            println("  → $(nrow(failed_problems)) failed problems:")
+            for (i, fail_row) in enumerate(eachrow(failed_problems))
+                if isfinite(fail_row.ratio)
+                    println("    $(i). $(fail_row.problem): final_obj=$(round(fail_row.final_obj, digits=6)), " *
+                           "best_obj=$(round(fail_row.best_obj, digits=6)), " *
+                           "ratio=$(round(fail_row.ratio, digits=3))x worse")
+                else
+                    println("    $(i). $(fail_row.problem): DIVERGED (final_obj=Inf)")
+                end
+            end
+        end
+    end
+end
+
+# Additional analysis: Show which problems are hardest (failed by most solvers)
+println("\n" * "="^60)
+println("MOST CHALLENGING PROBLEMS (failed by multiple solvers)")
+println("="^60)
+
+# Use regular DataFrames groupby instead of Tidier
+problem_difficulty = combine(
+    groupby(df_perf, :problem),
+    :practical_convergence => (x -> length(x) - sum(x)) => :n_solvers_failed,
+    :practical_convergence => length => :n_total_solvers,
+    :best_obj => first => :best_obj
+)
+
+# Add failure rate and filter
+problem_difficulty.failure_rate = round.(100 * problem_difficulty.n_solvers_failed ./ problem_difficulty.n_total_solvers, digits=1)
+problem_difficulty = problem_difficulty[problem_difficulty.n_solvers_failed .>= 2, :]
+sort!(problem_difficulty, :failure_rate, rev=true)
+
+if nrow(problem_difficulty) > 0
+    println("Problems that failed for multiple solvers:")
+    for (i, prob_row) in enumerate(eachrow(problem_difficulty))
+        println("  $(i). $(prob_row.problem): $(prob_row.n_solvers_failed)/$(prob_row.n_total_solvers) solvers failed " *
+               "($(prob_row.failure_rate)% failure rate)")
+    end
+else
+    println("No problems failed for multiple solvers - good solver robustness!")
+end
+
 lsresults = []
 # for prob_data in nls_functions
 #     result = nonlinearlstr.bounded_gauss_newton(

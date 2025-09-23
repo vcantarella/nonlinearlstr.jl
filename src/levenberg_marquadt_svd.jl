@@ -26,9 +26,31 @@ function svd_regularized_solve(svdls, b, λ)
     return x_svd
 end
 
-#TODO: make scaled version : requires GSVD
-function svd_regularized_solve_scaled!(x_svd, svdls, b, λ)
-    x_svd
+
+"""
+    svd_regularized_solve_scaled(svdls, b, λ::Real, d)
+
+Solve a regularized linear least squares problem using SVD decomposition.
+    solution in for example: https://en.wikipedia.org/wiki/Ridge_regression
+This function solves the regularized system
+at the scaling D = diag(d):
+    min ||Jx - b||² + λ||Dx||²
+using the SVD decomposition and solving the augmented system:
+# Arguments
+- `svdls`: The SVD factorization of the Jacobian matrixs
+- `b::AbstractVector`: The right-hand side vector (length m)
+- `λ::Real`: Regularization parameter. If λ > 0, Tikhonov regularization is applied
+- `d::AbstractVector`: Scaling vector with diagonal entries of the scaling matrix D (length n)
+# Returns
+- `x::Vector`: Solution vector of length n
+"""
+function svd_regularized_solve_scaled!(svdls, b, λ, d)
+    U = svdls.U
+    V = svdls.V
+    σs = svdls.S
+    n = length(σs)
+    x_svd = sum([σs[i]/(σs[i]^2 + λ*d[i]^2)*U[:,i]'*b*V[:,i] for i in 1:n])
+    return x_svd
 end
 
 """
@@ -47,7 +69,7 @@ function solve_for_dpdλ(svdls, b, λ)
     return dpdλ
 end
 
-#TODO: implement this for svd factorization (require GSVD)
+#TODO: implement this for svd factorization
 function solve_for_dp_dlambda_scaled(svdls, b, λ)
     #dpdλ
     return nothing

@@ -66,7 +66,13 @@ function augmented_qr(qrJ, λ)
 end
 
 Q_aug, R_augv2 = augmented_qr(qr(J), λ)
-
+J_aug = [J; √λ*I(size(J, 2))]
+Q_aug2, R_aug2 = qr(J_aug)
+Q_aug2 = Matrix(Q_aug2)
+Q_aug = Q_aug[:, 1:size(Q_aug2, 2)] # Adjust size if needed
+@assert Q_aug ≈ Q_aug2
+R_augv2 = R_augv2[1:size(R_aug2, 1), 1:size(R_aug2, 2)] # Adjust size if needed
+@assert R_augv2 ≈ R_aug2
 J = randn(6, 10)
 qru = qr(J)
 R = qru.R

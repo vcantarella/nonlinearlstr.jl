@@ -1,6 +1,8 @@
 function lm_trust_region(
     res::Function, jac::Function,
-    x0::Array{T};
+    x0::Array{T},
+    subproblem_strategy::SubProblemStrategy = QR,
+    scaling_strategy::ScalingStrategy = NoScaling,
     initial_radius::Real = 1.0,
     max_trust_radius::Real = 1e12,
     min_trust_radius::Real = 1e-8,

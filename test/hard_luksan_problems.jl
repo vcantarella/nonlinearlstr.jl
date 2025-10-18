@@ -63,7 +63,6 @@ end
 
 solvers = solvers = [
         ("LM-TR", nonlinearlstr.lm_trust_region),
-        ("LM-TR-scaled", nonlinearlstr.lm_trust_region_scaled),
         ("PRIMA-NEWUOA", PRIMA.newuoa),  # Special handling
         ("PRIMA-BOBYQA", PRIMA.bobyqa),  # Special handling
         ("NL-TrustRegion", NonlinearSolve.TrustRegion),  # Special handling

@@ -1,23 +1,19 @@
-using CUTEst
+include("nlls_problems_prep.jl")
 using NLPModels
 using JSOSolvers
 using PRIMA
 using NonlinearSolve
-using Enlsip
 using Pkg, Revise
-using DataFrames, CSV, CairoMakie
-using LinearAlgebra, Statistics
-using Tidier
+using DataFrames
 using nonlinearlstr
-include("nlls_problems_prep.jl")
 
 nls_problems = find_nlls_problems(999)
 
 
 solvers = [
-        ("LM-TR", nonlinearlstr.lm_trust_region),
-        ("LM-TR-scaled", nonlinearlstr.lm_trust_region_scaled),
-        ("SVD-LM-TR", nonlinearlstr.lm_svd_trust_region),
+        ("LM-QR", nonlinearlstr.lm_trust_region),
+        ("LM-QR-scaled", nonlinearlstr.lm_trust_region),
+        ("LM-SVD", nonlinearlstr.lm_trust_region),
         ("PRIMA-NEWUOA", nothing),  # Special handling
         ("PRIMA-BOBYQA", nothing),  # Special handling
         ("NonlinearSolve-TrustRegion", NonlinearSolve.TrustRegion),  # Special handling
@@ -30,6 +26,7 @@ solvers = [
         ("LSO-Levenberg-QR", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.QR())),
         ("LSO-DogLeg-chol", LeastSquaresOptim.Dogleg(LeastSquaresOptim.Cholesky())),
         ("LSO-Levenberg-chol", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.Cholesky())),
+        ("Scipy-LeastSquares", nothing),  # Special handling
     ]
 
 nls_results = nlls_benchmark(nls_problems, solvers, max_iter=400)
@@ -38,62 +35,21 @@ nls_results = nlls_benchmark(nls_problems, solvers, max_iter=400)
 # Convert to DataFrame
 df_nls = DataFrame(nls_results)
 
-df_nls_proc = @chain df_nls begin
-    @group_by(problem)
-    #@filter(final_objective .> 0)
-    @mutate(min_solution = minimum(final_objective))
-    @ungroup
-    @mutate(final_close = ifelse((abs(final_objective - min_solution) <= 1e-4),
-        true, false))
-end
+include("evaluate_solver_dfs.jl")
 
-# group by solver and
-@chain df_nls_proc begin
-    @group_by(solver)
-    @summarize(
-        converged = sum(final_close)/n(),
-        iterations = median(iterations),
-        mean_objective = mean(final_objective),
-        std_objective = std(final_objective),
-        mean_execution_time = median(time)
-    )
-    @arrange(desc(converged))
-end
+df_nls_proc = compare_with_best(df_nls)
+summary_nls = evaluate_solvers(df_nls_proc)
+display(summary_nls)
 
-#Check and return the problems where the performance with QR-NLLS is bad
-df_nls_bad = @chain df_nls_proc begin
-    @filter(solver == "LM-TR")
-    @filter(final_close == false)
-end
+@test summary_df[summary_df[:solver] .== "LM-QR", :percentage_success][1] > 0.9
+@test summary_df[summary_df[:solver] .== "LM-SVD", :percentage_success][1] > 0.9
+fig_nls = build_performance_plots(df_nls_proc)
+save("../test_plots/nlls_solver_performance.png", fig_nls)
 
-bad_probs = df_nls_bad.problem
-#convert to symbols
-bad_probs_symb = Symbol.(bad_probs)
-df_bad_probs = DataFrame(nlls_benchmark(bad_probs_symb, solvers, max_iter=200))
-
-first_bad_prob = bad_probs[4]
-df_bad_probs[df_bad_probs.problem .== first_bad_prob, :]
-
-
-df_mgh33 = @chain df_nls_proc begin
-    @filter(problem == "tp202")
-end
-
-bad_probs = df_nls_bad.problem[df_nls_bad.converged .== false]
-#convert to symbols
-bad_probs_symb = Symbol.(bad_probs)
-df_bad_probs = DataFrame(nlls_benchmark(bad_probs_symb, solvers, max_iter=200))
-
-display(
-    @chain df_nls_proc begin
-    @group_by(solver)
-    @summarize(
-        converged = sum(final_close)/maximum(final_close),
-        iterations = median(iterations),
-        mean_objective = mean(final_objective),
-        std_objective = std(final_objective),
-        mean_execution_time = mean(time)
-    )
-    @arrange(desc(converged))
-end
-)
+# # testing scipy for debugging
+# prob_name = nls_problems[3]
+# nlp = eval(prob_name)()
+# prob_data = create_nls_functions(nlp)
+# test_solver_on_problem("Scipy-LeastSquares", nothing, prob_data, nlp)
+# scipy.optimize.least_squares(prob_data.residual_func, prob_data.x0, jac=prob_data.jacobian_func, bounds=(prob_data.bl, prob_data.bu),
+#             xtol=1e-8, gtol=1e-8, max_nfev=1000, verbose=2)

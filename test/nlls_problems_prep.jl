@@ -1,6 +1,5 @@
 using CUTEst
 using NLPModels
-using Enlsip
 using NLSProblems
 using JSOSolvers
 using PRIMA
@@ -10,8 +9,10 @@ using DataFrames, CSV, CairoMakie
 using LeastSquaresOptim
 using LinearAlgebra, Statistics
 using BenchmarkTools
+using PythonCall
+scipy = pyimport("scipy")
 
-Pkg.develop(PackageSpec(path="/Users/vcantarella/.julia/dev/nonlinearlstr"))
+Pkg.develop(path=joinpath(@__DIR__, ".."))
 using nonlinearlstr
 
 function find_cutest_nlls_problems(max_vars=50)
@@ -93,7 +94,7 @@ function create_cutest_functions(nlp)
         obj_func=obj_func,
         grad_func=grad_func,
         hess_func=hess_func,
-        name=prob.meta.name
+        problem=prob.meta.name
     )
 end
 
@@ -124,34 +125,49 @@ function create_nls_functions(prob)
     
     return (
         n=n, m=m, x0=x0, bl=bl, bu=bu,
+        initial_cost = obj_func(x0),
         residual_func=residual_func,
         jacobian_func=jacobian_func,
         obj_func=obj_func,
         grad_func=grad_func,
         hess_func=hess_func,
-        name=prob.meta.name
+        problem=prob.meta.name
     )
 end
 
 function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_iter=100)
     """Test a single solver on a problem"""
     try
-        if solver_name in ["LM-TR", "LM-TR-scaled", "SVD-LM-TR"]
+        if solver_name in ["LM-QR", "LM-QR-scaled", "LM-SVD"]
             # Use residual-Jacobian interface
+            if contains(solver_name, "scaled")
+                scaling_strategy = nonlinearlstr.JacobianScaling()
+            else
+                scaling_strategy = nonlinearlstr.NoScaling()
+            end
+            if contains(solver_name, "QR")
+                subproblem_strategy = nonlinearlstr.QRSolve(
+                )
+            else # contains(solver_name, "SVD")
+                subproblem_strategy = nonlinearlstr.SVDSolve(
+                )
+            end
+
             result = solver_func(
-                prob_data.residual_func, prob_data.jacobian_func, 
-                prob_data.x0;
+                prob_data.residual_func, prob_data.jacobian_func, prob_data.x0,
+                subproblem_strategy, scaling_strategy;
                 max_iter=max_iter, gtol=1e-6
             )
             #run one more time for timing:
 
-            t = @benchmark $solver_func(
-                $prob_data.residual_func, $prob_data.jacobian_func, 
-                $prob_data.x0;
-                max_iter=$max_iter, gtol=1e-6)
-            elapsed_time = median(t).time
+            t = @elapsed solver_func(
+                prob_data.residual_func, prob_data.jacobian_func,
+                prob_data.x0, subproblem_strategy, scaling_strategy;
+                max_iter=max_iter, gtol=1e-6
+            )
+           
             x_opt, r_opt, g_opt, iterations = result
-            final_obj = 0.5 * dot(r_opt, r_opt)
+            final_cost = 0.5 * dot(r_opt, r_opt)
             converged = norm(g_opt, 2) < 1e-6     
         elseif solver_name in ["PRIMA-NEWUOA", "PRIMA-BOBYQA"]
             # Use objective-only interface
@@ -160,18 +176,17 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 #function model n times. I am evaluating time here once because they are the ones that take the longer.
                 start_time = time()
                 result = PRIMA.newuoa(prob_data.obj_func, prob_data.x0; maxfun=max_iter*prob_data.m)
-                elapsed_time = time() - start_time
+                t = time() - start_time
             else
                 lb = prob_data.bl
                 ub = prob_data.bu
                 start_time = time()
                 result = PRIMA.bobyqa(prob_data.obj_func, prob_data.x0; 
                                     xl=lb, xu=ub, maxfun=max_iter*prob_data.m)
-                elapsed_time = time() - start_time
+                t = time() - start_time
             end
-            elapsed_time = elapsed_time * 1e9 #from seconds to nanoseconds
             x_opt = result[1]
-            final_obj = prob_data.obj_func(x_opt)
+            final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)
             iterations = result[2].nf
             converged = PRIMA.issuccess(result[2])
@@ -181,19 +196,17 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             nl_func = NonlinearFunction(n_res, jac=nl_jac)
             prob_nl = NonlinearLeastSquaresProblem(nl_func, prob_data.x0)
             sol = solve(prob_nl, solver_func(); maxiters=max_iter)
-            t = @benchmark solve($prob_nl, $solver_func(); maxiters=$max_iter)
-            elapsed_time = median(t).time
+            t = @elapsed solve(prob_nl, solver_func(); maxiters=max_iter)
             x_opt = sol.u
-            final_obj = prob_data.obj_func(x_opt)
+            final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)
             iterations = sol.stats.nsteps
             converged = SciMLBase.successful_retcode(sol)    
         elseif contains(solver_name, "JSO-") 
             stats = solver_func(prob, max_iter=max_iter)
-            t = @benchmark $solver_func($prob, max_iter=$max_iter)
-            elapsed_time = median(t).time
+            t = @elapsed solver_func(prob, max_iter=max_iter)
             x_opt = stats.solution
-            final_obj = prob_data.obj_func(x_opt)
+            final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)
             iterations = stats.iter
             converged = stats.status == :first_order
@@ -203,42 +216,36 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             res = optimize!(LeastSquaresProblem(x=prob_data.x0, f! = f_func!, 
                                               g! = J_func!, 
                                               output_length=prob_data.m), solver_func)
-            t = @benchmark optimize!(LeastSquaresProblem(x=$prob_data.x0, f! = $f_func!,
-            g! = $J_func!, output_length=$prob_data.m), $solver_func)
-            elapsed_time = median(t).time
+            t = @elapsed optimize!(LeastSquaresProblem(x=prob_data.x0, f! = f_func!,
+            g! = J_func!, output_length=prob_data.m), solver_func)
             x_opt = res.minimizer
             iterations = res.iterations
             converged = res.converged
-            final_obj = prob_data.obj_func(x_opt)
+            final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)
-        # elseif solver_name == "Enlsip"
-        #     model = Enlsip.CnlsModel(prob_data.residual_func, prob_data.n, prob_data.m;
-        #                             jacobian_residuals=prob_data.jacobian_func, starting_point=prob_data.x0,
-        #                             x_low=lb, x_upp=ub)
-        #     # Call of the `solve!` function
-        #     Enlsip.solve!(model)
-        #     status = Enlsip.get_status(model)
-        #     println("Algorithm termination status: ", status)
-        #     println("Optimal solution: ", Enlsip.solution(model))
-        #     println("Optimal objective value: ", Enlsip.sum_sq_residuals(model))
-
-        #     #œresult = Enlsip.enlsip(prob_data.residual_func, prob_data.jacobian_func, prob_data.x0; max_iter=max_iter)
-        #     x_opt = Enlsip.solution(model)
-        #     final_obj = prob_data.obj_func(x_opt)
-        #     g_opt = prob_data.grad_func(x_opt)
-        #     iterations = NaN
-        #     converged = false
+        elseif solver_name == "Scipy-LeastSquares"
+            pyresult = scipy.optimize.least_squares(prob_data.residual_func, prob_data.x0, jac=prob_data.jacobian_func, bounds=(prob_data.bl, prob_data.bu),
+            xtol=1e-8, gtol=1e-6, max_nfev=1000, verbose=2)
+            t = @elapsed scipy.optimize.least_squares(prob_data.residual_func, prob_data.x0, 
+            jac=prob_data.jacobian_func,
+            bounds=(prob_data.bl, prob_data.bu),
+            xtol=1e-8, gtol=1e-6, max_nfev=1000, verbose=2)
+            x_opt = pyconvert(Vector{Float64}, pyresult.x)
+            final_cost = 0.5 * dot(prob_data.residual_func(x_opt), prob_data.residual_func(x_opt))
+            converged = pyconvert(Bool, pyresult.success) == true
+            g_opt = prob_data.grad_func(x_opt)
+            iterations =  pyconvert(Int, pyresult.njev)
         else
-            error("Unknown solver: $solver_name")
+            error("Unknown solver: solver_name")
         end
         
         return (
             solver = solver_name,
             success = true,
             converged = converged,
-            final_objective = final_obj,
+            final_cost = final_cost,
             iterations = iterations,
-            time = elapsed_time/1e9,  # Convert from nanoseconds to seconds
+            time = t,
             final_gradient_norm = norm(g_opt, 2),
             x_opt = x_opt
         )
@@ -248,7 +255,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             solver = solver_name,
             success = false,
             converged = false,
-            final_objective = Inf,
+            final_cost = Inf,
             iterations = 0,
             time = Inf,
             bounds_satisfied = false,
@@ -258,8 +265,9 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
     end
 end
 
+
 function nlls_benchmark(problems, solvers; max_iter=100)
-    """Run comprehensive benchmark on CUTEst NLLS problems"""
+    """Run comprehensive elapsed on NLLS problems"""
     # Define solvers to test
     results = []
     max_problems = length(problems)
@@ -287,7 +295,7 @@ function nlls_benchmark(problems, solvers; max_iter=100)
                 print("    Testing $solver_name... ")
                 result = test_solver_on_problem(solver_name, solver_func, prob_data, nlp, max_iter)
                 if result.success && result.converged
-                    println("✓ obj=$(round(result.final_objective, digits=8)), iters=$(result.iterations)")
+                    println("✓ obj=$(round(result.final_cost, digits=8)), iters=$(result.iterations)")
                 else
                     status = result.success ? "no convergence" : "failed"
                     println("✗ $status")
@@ -297,7 +305,7 @@ function nlls_benchmark(problems, solvers; max_iter=100)
                     nvars = prob_data.n,
                     nresiduals = prob_data.m,
                     initial_objective = initial_obj,
-                    improvement = initial_obj - result.final_objective,
+                    improvement = initial_obj - result.final_cost,
                 ))
                 push!(problem_results, result_with_problem)
             end

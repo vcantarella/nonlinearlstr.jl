@@ -1,7 +1,7 @@
 module nonlinearlstr
     using LinearAlgebra
-    include("subproblems.jl")
     include("scaling.jl")
+    include("subproblems.jl")
     #include("levenberg-marquardt.jl")
     #include("levenberg_marquadt_svd.jl")
     #using LinearAlgebra

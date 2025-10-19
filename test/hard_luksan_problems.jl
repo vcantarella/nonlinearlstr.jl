@@ -6,6 +6,9 @@ using LeastSquaresOptim
 using ForwardDiff
 using LinearAlgebra, Statistics
 using nonlinearlstr
+using BenchmarkTools
+using PythonCall
+scipy = pyimport("scipy")
 
 # Hard Problems in Luksan, 1995
 fa1(x,t) = x[1] + x[2]*exp(x[3]*t)
@@ -62,28 +65,34 @@ function build_problems(resf, x0)
 end
 
 solvers = solvers = [
-        ("LM-TR", nonlinearlstr.lm_trust_region),
+        ("LM-QR", nonlinearlstr.lm_trust_region),
+        ("LM-SVD", nonlinearlstr.lm_trust_region),
         ("PRIMA-NEWUOA", PRIMA.newuoa),  # Special handling
         ("PRIMA-BOBYQA", PRIMA.bobyqa),  # Special handling
         ("NL-TrustRegion", NonlinearSolve.TrustRegion),  # Special handling
         ("NL-LevenbergMarquardt", NonlinearSolve.LevenbergMarquardt),  # Special handling
         ("NL-GaussNewton", NonlinearSolve.GaussNewton),  # Special handling
         ("NL-PolyAlg", NonlinearSolve.FastShortcutNLLSPolyalg),  # Special handling
+        ("Scipy-LeastSquares", nothing),  # Special handling
     ]
-function solve_non(solver_func, prob_data; maxiters)
+function solve_non(solver_func, prob_data; maxiters, strat, scaling=nonlinearlstr.NoScaling())
     residual_func = prob_data.res
     jac_func = prob_data.jac
     grad_func = prob_data.grad
     obj_func = prob_data.obj
     x0 = prob_data.x0
     initial_obj = prob_data.initial_obj
-    sol = solver_func(
-        residual_func, jac_func, x0, ;
-        max_iter=maxiters    )
+    sol = nonlinearlstr.lm_trust_region(
+        residual_func, jac_func, x0, strat, scaling;
+        max_iter=maxiters)
     x, f_opt, g_opt, iter = sol
     # Basic convergence tests
     converged = norm(g_opt, 2) < 1e-6
     cost = 0.5 * dot(f_opt, f_opt)
+    # solve one more time to get the timing
+    t = @elapsed nonlinearlstr.lm_trust_region(
+        residual_func, jac_func, x0, strat, scaling;
+        max_iter=maxiters)
 
     return (
         x0 = x0,
@@ -91,7 +100,8 @@ function solve_non(solver_func, prob_data; maxiters)
         converged = converged,
         iterations = iter,
         initial_cost = initial_obj,
-        cost = cost,
+        final_cost = cost,
+        time = t,
         )
 end
 function solve_nlsolve(solver_func, prob_data; maxiters)
@@ -102,7 +112,9 @@ function solve_nlsolve(solver_func, prob_data; maxiters)
     initial_obj = prob_data.initial_obj
 
     nlprob = NonlinearLeastSquaresProblem(nl_res, x0)
-    sol = solve(nlprob, solver_func(); maxiters=maxiters)
+    sol = solve(nlprob, solver_func(); maxiters=maxiters,
+    show_trace=Val(true), trace_level=TraceAll()
+    )
     x_opt = sol.u
     f_opt = residual_func(x_opt)
     g_opt = jac_func(x_opt)' * f_opt  # Gradient of 0.
@@ -110,13 +122,16 @@ function solve_nlsolve(solver_func, prob_data; maxiters)
     # Basic convergence tests
     converged = norm(g_opt, 2) < 1e-6
     cost = 0.5 * dot(f_opt, f_opt)
+    t = @elapsed solve(nlprob, solver_func(); maxiters=maxiters,
+        )
     return (
         x0 = x0,
         x_opt = x_opt,
         converged = converged,
         iterations = iter,
         initial_cost = initial_obj,
-        cost = cost,
+        final_cost = cost,
+        time = t,
         )
 end
 function solve_prima(solver_func, prob_data; maxiters)
@@ -133,13 +148,45 @@ function solve_prima(solver_func, prob_data; maxiters)
     # Basic convergence tests
     converged = PRIMA.issuccess(res[2])
     cost = 0.5 * dot(f_opt, f_opt)
+    t = @elapsed solver_func(obj, x0)
     return (
         x0 = x0,
         x_opt = x_opt,
         converged = converged,
         iterations = iter,
         initial_cost = initial_obj,
-        cost = cost,
+        final_cost = cost,
+        time = t,
+        )
+end
+
+function solve_scipy(solver_func, prob_data; maxiters)
+    residual_func = prob_data.res
+    jac_func = prob_data.jac
+    x0 = prob_data.x0
+    initial_obj = prob_data.initial_obj
+
+    pyresult = scipy.optimize.least_squares(residual_func, x0, jac=jac_func,
+            xtol=1e-8, gtol=1e-6, max_nfev=maxiters, verbose=2)
+    x_opt = pyconvert(Vector{Float64}, pyresult.x)
+    f_opt = residual_func(x_opt)
+    g_opt = jac_func(x_opt)' * f_opt  # Gradient of 0.
+    iter = pyconvert(Int, pyresult.nfev)
+    # Basic convergence tests
+    converged = pyconvert(Bool, pyresult.success) == true
+    cost = 0.5 * dot(f_opt, f_opt)
+    t = @elapsed scipy.optimize.least_squares(residual_func, x0, 
+            jac=jac_func,
+            
+            xtol=1e-8, gtol=1e-6, max_nfev=maxiters, verbose=2)
+    return (
+        x0 = x0,
+        x_opt = x_opt,
+        converged = converged,
+        iterations = iter,
+        initial_cost = initial_obj,
+        final_cost = cost,
+        time = t,
         )
 end
 
@@ -155,26 +202,42 @@ for (name, prob) in zip(problem_names, problems)
     for (solver_name, solver_func) in solvers
         println("  Solver Name: $solver_name")
         println("  Solver Function: $solver_func")
-        if solver_name in ["QR-NLLS", "LM-TR", "LM-TR-scaled"]
-            result = solve_non(solver_func, prob; maxiters=100)
+        if solver_name in ["LM-QR", "LM-SVD"]
+            if solver_name == "LM-QR"
+                strat = nonlinearlstr.QRSolve()
+            else # solver_name == "LM-SVD"
+                strat = nonlinearlstr.SVDSolve()
+            end
+            result = solve_non(solver_func, prob; maxiters=400, strat=strat)
         elseif solver_name in ["NL-TrustRegion", "NL-LevenbergMarquardt", "NL-GaussNewton", "NL-PolyAlg"]
-            result = solve_nlsolve(solver_func, prob; maxiters=100)
+            result = solve_nlsolve(solver_func, prob; maxiters=400)
         elseif solver_name in ["PRIMA-NEWUOA", "PRIMA-BOBYQA"]
-            result = solve_prima(solver_func, prob; maxiters=100)
+            result = solve_prima(solver_func, prob; maxiters=400)
+        elseif solver_name == "Scipy-LeastSquares"
+            result = solve_scipy(solver_func, prob; maxiters=400)
+        else
+            error("Unknown solver: $solver_name")
         end
-        result = merge(result, (prob_name=name, solver=solver_name))
+        result = merge(result, (problem=name, solver=solver_name))
         push!(results, result)
     end
 end
 
 df = DataFrame(results)
 
-name = "A.1"
-prob = problems[4]
-println("Problem Name: $name")
-println("Problem Data: $prob")
-solver_name = "LM-TR"
-solver_func= nonlinearlstr.lm_trust_region
-println("  Solver Name: $solver_name")
-println("  Solver Function: $solver_func")
-result = solve_non(solver_func, prob; maxiters=200)
+include("evaluate_solver_dfs.jl")
+
+df_proc = compare_with_best(df)
+summary_df = evaluate_solvers(df_proc)
+display(summary_df)
+@test summary_df[summary_df[:solver] .== "LM-QR", :percentage_success][1] > 0.49
+@test summary_df[summary_df[:solver] .== "LM-SVD", :percentage_success][1] > 0.49
+fig = build_performance_plots(df_proc)
+save("../test_plots/hardluksan_nls_solver_performance.png", fig)
+
+# # investigate a bit:
+# problem = problems[end]  # A.6
+# solve_nlsolve(NonlinearSolve.LevenbergMarquardt, problem; maxiters=200)
+# solve_non(nonlinearlstr.lm_trust_region, problem; maxiters=200,
+#     strat=nonlinearlstr.SVDSolve()
+#     )

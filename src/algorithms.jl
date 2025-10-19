@@ -6,7 +6,7 @@ function lm_trust_region(
     initial_radius::Real = 1.0,
     max_trust_radius::Real = 1e12,
     min_trust_radius::Real = 1e-8,
-    step_threshold::Real = 0.01,
+    step_threshold::Real = 0.001,
     shrink_threshold::Real = 0.25,
     expand_threshold::Real = 0.75,
     shrink_factor::Real = 0.25,
@@ -14,7 +14,7 @@ function lm_trust_region(
     max_iter::Int = 100,
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
-    override_initial_radius::Bool = true,
+    norm_overrides_initial_radius::Bool = true,
     ) where T
 
     # Initialize
@@ -24,7 +24,7 @@ function lm_trust_region(
     cost = 0.5 * dot(f, f)
     g = J' * f
     cache = SubproblemCache(subproblem_strategy, scaling_strategy, J)
-    if override_initial_radius && norm(x0) > 1e-4
+    if norm_overrides_initial_radius && norm(x0) > 1e-4
         initial_radius = norm(cache.scaling_matrix * x0)
     end
     radius = initial_radius
@@ -56,7 +56,7 @@ function lm_trust_region(
         ρ = actual_reduction / predicted_reduction
         # Update trust region radius
         if (ρ >= expand_threshold) && (λ > 0)
-            radius = min(max_trust_radius, expand_factor * norm(δ))
+            radius = min(max_trust_radius, expand_factor * radius)
         elseif ρ < shrink_threshold
             radius *= shrink_factor
         end
@@ -73,10 +73,14 @@ function lm_trust_region(
                 println("Gradient convergence criterion reached")
                 return x, f, g, iter
             end
-            if actual_reduction < ftol * cost
+            if actual_reduction < ftol * max(cost, 1.0)
                 println("Function tolerance criterion reached")
                 return x, f, g, iter
             end
+
+            # update cache
+            cache.factorization = factorize(subproblem_strategy, J)
+            cache.scaling_matrix = scaling(scaling_strategy, J)
         else
             println("Step rejected, ρ = $ρ")
         end

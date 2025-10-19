@@ -117,7 +117,7 @@ function solve_subproblem(strategy::SubProblemStrategy, J::AbstractMatrix{T},
         λ = zero(T)
         δ = δgn
     else
-        λ, δ = find_λ_scaled(strategy, F, radius, J, Dk, f, 100)
+        λ, δ = find_λ_scaled(strategy, F, radius, J, Dk, f, 200, 1e-6)
     end
     return λ, δ
 end
@@ -178,7 +178,6 @@ function find_λ_scaled(strategy::QRSolve, F, Δ, J, D, f, maxiters, θ=1e-4)
             λ = max(lₖ+0.01*(uₖ-lₖ),√(lₖ*uₖ))
         end
     end
-    println("Final step norm: ", norm(D*p))
     return λ, p
 end
 
@@ -234,7 +233,6 @@ function find_λ_scaled(strategy::SVDSolve, F, Δ, J, D, f, maxiters, θ=1e-4)
             λ = max(lₖ+0.01*(uₖ-lₖ),√(lₖ*uₖ))
         end
     end
-    println("Final step norm: ", norm(D*p))
     return λ, p
 end
 

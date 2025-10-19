@@ -4,4 +4,6 @@ using Test
 @testset "nonlinearlstr.jl" begin
     # Write your tests here.
     include("test_subproblems.jl")
+    include("hard_luksan_problems.jl")
+    include("problem_testing.jl")
 end

@@ -130,36 +130,35 @@ using nonlinearlstr
         end
     end
 
-    @testset "Performance Benchmarks" begin
-        # Note: These are for development/profiling, not automated testing
-        println("\n=== Performance Benchmarks ===")
+    # @testset "Performance Benchmarks" begin
+    #     # Note: These are for development/profiling, not automated testing
+    #     println("\n=== Performance Benchmarks ===")
         
-        println("Benchmarking QR-based solve:")
-        strat_qr = nonlinearlstr.QRSolve()
-        scaling = nonlinearlstr.NoScaling()
-        cache_qr = nonlinearlstr.SubproblemCache(strat_qr, scaling, J)
-        @benchmark nonlinearlstr.solve_subproblem($strat_qr, $J, $f, $size_p, $cache_qr)
+    #     println("Benchmarking QR-based solve:")
+    #     strat_qr = nonlinearlstr.QRSolve()
+    #     scaling = nonlinearlstr.NoScaling()
+    #     cache_qr = nonlinearlstr.SubproblemCache(strat_qr, scaling, J)
+    #     @benchmark nonlinearlstr.solve_subproblem($strat_qr, $J, $f, $size_p, $cache_qr)
         
-        println("Benchmarking SVD-based solve:")
-        strat_svd = nonlinearlstr.SVDSolve()
-        cache_svd = nonlinearlstr.SubproblemCache(strat_svd, scaling, J)
-        @benchmark nonlinearlstr.solve_subproblem($strat_svd, $J, $f, $size_p, $cache_svd)
-    end
+    #     println("Benchmarking SVD-based solve:")
+    #     strat_svd = nonlinearlstr.SVDSolve()
+    #     cache_svd = nonlinearlstr.SubproblemCache(strat_svd, scaling, J)
+    #     @benchmark nonlinearlstr.solve_subproblem($strat_svd, $J, $f, $size_p, $cache_svd)
+    # end
 
-    @testset "Type Stability" begin
-        # Check for type instabilities
-        println("\n=== Type Stability Analysis ===")
+    # @testset "Type Stability" begin
+    #     # Check for type instabilities
+    #     println("\n=== Type Stability Analysis ===")
         
-        println("QR method type analysis:")
-        strat_qr = nonlinearlstr.QRSolve()
-        scaling = nonlinearlstr.NoScaling()
-        cache_qr = nonlinearlstr.SubproblemCache(strat_qr, scaling, J)
-        @code_warntype nonlinearlstr.solve_subproblem(strat_qr, J, f, size_p, cache_qr)
+    #     println("QR method type analysis:")
+    #     strat_qr = nonlinearlstr.QRSolve()
+    #     scaling = nonlinearlstr.NoScaling()
+    #     cache_qr = nonlinearlstr.SubproblemCache(strat_qr, scaling, J)
+    #     @code_warntype nonlinearlstr.solve_subproblem(strat_qr, J, f, size_p, cache_qr)
         
-        println("SVD method type analysis:")
-        strat_svd = nonlinearlstr.SVDSolve()
-        cache_svd = nonlinearlstr.SubproblemCache(strat_svd, scaling, J)
-        @code_warntype nonlinearlstr.solve_subproblem(strat_svd, J, f, size_p, cache_svd)
-    end
-
+    #     println("SVD method type analysis:")
+    #     strat_svd = nonlinearlstr.SVDSolve()
+    #     cache_svd = nonlinearlstr.SubproblemCache(strat_svd, scaling, J)
+    #     @code_warntype nonlinearlstr.solve_subproblem(strat_svd, J, f, size_p, cache_svd)
+    # end
 end

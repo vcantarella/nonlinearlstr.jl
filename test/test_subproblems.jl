@@ -4,9 +4,7 @@ using Statistics
 using Random
 using ForwardDiff
 using BenchmarkTools
-using Pkg
 using Revise
-using NonlinearSolve
 using nonlinearlstr
 
 @testset "Unconstrained Subproblem Tests" begin

@@ -11,7 +11,6 @@ using LinearAlgebra, Statistics
 using PythonCall
 scipy = pyimport("scipy")
 
-Pkg.develop(PackageSpec(path="/Users/vcantarella/.julia/dev/nonlinearlstr"))
 using nonlinearlstr
 
 function find_bounded_problems(max_vars=Inf)

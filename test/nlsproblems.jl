@@ -3,7 +3,6 @@ using PRIMA, NonlinearSolve, JSOSolvers
 using Pkg, Revise
 using DataFrames, CSV, CairoMakie
 
-Pkg.develop(PackageSpec(path="/.."))
 using nonlinearlstr
 
 function find_nlls_problems(max_vars=50)

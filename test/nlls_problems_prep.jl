@@ -12,7 +12,6 @@ using BenchmarkTools
 using PythonCall
 scipy = pyimport("scipy")
 
-Pkg.develop(path=joinpath(@__DIR__, ".."))
 using nonlinearlstr
 
 function find_cutest_nlls_problems(max_vars=50)

@@ -7,8 +7,6 @@ using BenchmarkTools
 using Pkg
 using Revise
 using NonlinearSolve
-
-Pkg.develop(path=joinpath(@__DIR__, ".."))
 using nonlinearlstr
 
 @testset "Unconstrained Subproblem Tests" begin

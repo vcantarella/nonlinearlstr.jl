@@ -72,17 +72,17 @@ The method maintains lower (`lₖ`) and upper (`uₖ`) bounds on λ and uses:
 - KALTENBACH, Marius, 2022. The Levenberg-Marquardt Method and 
     its Implementation in Python [Master thesis]. Konstanz: Universität Konstanz
 """
-function find_λ(Δ, J, f, maxiters, θ=1e-4)
+function find_λ(Δ, J, f, maxiters, θ = 1e-4)
     l₀ = 0.0
     u₀ = norm(J'f)/Δ
-    λ₀ = max(1e-3*u₀,√(l₀*u₀))
+    λ₀ = max(1e-3*u₀, √(l₀*u₀))
     λ = λ₀
     uₖ = u₀
     lₖ = l₀
     n = size(J, 2)
     p = zeros(n)
     b_aug = [-f; zeros(n)]
-    for i in 1:maxiters
+    for i = 1:maxiters
         qrf = qr([J; √λ * I(n)])
         p = qrf \ b_aug  # Solve the augmented system
         if (1-θ)*Δ < norm(p) < (1+θ)*Δ
@@ -97,24 +97,24 @@ function find_λ(Δ, J, f, maxiters, θ=1e-4)
         @inline dpdλ = solve_for_dp_dlambda(qrf, p)
         λ = λ - (norm(p)-Δ)/Δ*(p'p)/(p'dpdλ)
         if !(uₖ < λ <= lₖ)
-            λ = max(lₖ+0.01*(uₖ-lₖ),√(lₖ*uₖ))
+            λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))
         end
     end
     println("Final step norm: ", norm(p))
     return λ, p
 end
 
-function find_λ_scaled(Δ, J, D, f, maxiters, θ=1e-4)
+function find_λ_scaled(Δ, J, D, f, maxiters, θ = 1e-4)
     l₀ = 0.0
     u₀ = norm(D*J'f)/Δ
-    λ₀ = max(1e-3*u₀,√(l₀*u₀))
+    λ₀ = max(1e-3*u₀, √(l₀*u₀))
     λ = λ₀
     uₖ = u₀
     lₖ = l₀
     p = zeros(size(J, 2))
     b_aug = [-f; zeros(size(J, 2))]
-    for i in 1:maxiters
-        qrf = qr([J;√λ*D])
+    for i = 1:maxiters
+        qrf = qr([J; √λ*D])
         p = qrf \ b_aug
         if (1-θ)*Δ < norm(D*p) < (1+θ)*Δ
             break
@@ -128,7 +128,7 @@ function find_λ_scaled(Δ, J, D, f, maxiters, θ=1e-4)
         dpdλ = solve_for_dp_dlambda_scaled(qrf, p, D)
         λ = λ - (norm(D*p)-Δ)/Δ*((D*p)'*(D*p)/(p'*D'*(D*dpdλ)))
         if !(uₖ < λ <= lₖ)
-            λ = max(lₖ+0.01*(uₖ-lₖ),√(lₖ*uₖ))
+            λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))
         end
     end
     println("Final step norm: ", norm(D*p))

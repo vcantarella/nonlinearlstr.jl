@@ -31,12 +31,18 @@ max_iter = 1000
 x = cg(A, b, x0, tol, max_iter)
 ```
 """
-function cg(A::AbstractMatrix, b::AbstractVector, x0::AbstractVector, tol::Real, max_iter::Int)
+function cg(
+    A::AbstractMatrix,
+    b::AbstractVector,
+    x0::AbstractVector,
+    tol::Real,
+    max_iter::Int,
+)
     x = x0
     g = A*x + b #g_0 initial gradient
     u = -g #u_0 initial search direction is the steepest decent
     k = 0 #iteration counter
-    for i in 1:max_iter
+    for i = 1:max_iter
         λꜝ = - (g' * u) / (u' * A * u) #step size
         x = x + λꜝ * u #update x
         g = A*x + b #update gradient
@@ -88,9 +94,15 @@ tol = 1e-6
 max_iter = 1000
 d = tcg(H, g, d, Δ, l, u, tol, max_iter)
 """
-function tcg(H::AbstractMatrix, g::AbstractVector,Δ::Real,
-             l::AbstractVector, u::AbstractVector,
-             tol::Real, max_iter::Int)
+function tcg(
+    H::AbstractMatrix,
+    g::AbstractVector,
+    Δ::Real,
+    l::AbstractVector,
+    u::AbstractVector,
+    tol::Real,
+    max_iter::Int,
+)
     # Step 1: Initialization
     n = length(g)
     d = zeros(n) #Initial guess is zero Powell(2009)
@@ -100,12 +112,12 @@ function tcg(H::AbstractMatrix, g::AbstractVector,Δ::Real,
     s = Int[] # inactive set
     k = 0 #iteration counter
     touch_bound = false
-    for i in 1:max_iter
+    for i = 1:max_iter
         # Step 1: Update active set
         if touch_bound
             for j in eachindex(d)
-                if (abs(d[j] - l[j]) < tol && g[j] ≥ 0) || 
-                (abs(d[j] - u[j]) < tol && g[j] ≤ 0)
+                if (abs(d[j] - l[j]) < tol && g[j] ≥ 0) ||
+                   (abs(d[j] - u[j]) < tol && g[j] ≤ 0)
                     push!(s, j)
                 end
             end
@@ -131,7 +143,7 @@ function tcg(H::AbstractMatrix, g::AbstractVector,Δ::Real,
             end
             return d + σ*p
         end
-        
+
         if any(d + α*p .≤ l)
             α = minimum((l-d) ./ p)
             touch_bound = true
@@ -160,7 +172,7 @@ end
 #     v::Vector{T}    # residual
 #     p::Vector{T}    # search direction
 #     Hp::Vector{T}   # matrix-vector product
-    
+
 #     # Computation buffers
 #     pHp::T          # p'Hp value
 #     gp::T           # g'p value  
@@ -168,7 +180,7 @@ end
 #     vv_next::T      # next v'v value
 #     alpha::T        # step length
 #     beta::T         # conjugate direction parameter
-    
+
 #     # Sets
 #     s::Vector{Int}  # inactive set
 # end
@@ -198,10 +210,10 @@ end
 #     copyto!(cache.v, g)
 #     copyto!(cache.p, -g)
 #     empty!(cache.s)
-    
+
 #     k = 0
 #     touch_bound = false
-    
+
 #     for i in 1:max_iter
 #         # Update active set
 #         if touch_bound
@@ -213,34 +225,34 @@ end
 #                 end
 #             end
 #         end
-        
+
 #         # Inactivate bound constraints
 #         cache.p[cache.s] .= 0
-        
+
 #         # Compute κ = p'Hp
 #         mul!(cache.Hp, H, cache.p)
 #         cache.pHp = dot(cache.p, cache.Hp)
-        
+
 #         # Check curvature
 #         if cache.pHp <= 0
 #             σ = (-dot(cache.d, cache.p) + 
 #                  sqrt(dot(cache.d, cache.p)^2 + 
 #                       dot(cache.p, cache.p)*(Δ^2 - dot(cache.d, cache.d)))) / 
 #                  dot(cache.p, cache.p)
-            
+
 #             if any(cache.d + σ*cache.p .<= l)
 #                 σ = minimum((l .- cache.d) ./ cache.p)
 #             elseif any(cache.d + σ*cache.p .>= u)
 #                 σ = maximum((u .- cache.d) ./ cache.p)
 #             end
-            
+
 #             @. cache.d += σ * cache.p
 #             return cache.d
 #         end
-        
+
 #         # Compute step length
 #         cache.alpha = dot(cache.g, cache.v) / cache.pHp
-        
+
 #         # Check trust region
 #         if norm(cache.d + cache.alpha*cache.p) >= Δ
 #             σ = (-dot(cache.d, cache.p) + 
@@ -250,29 +262,29 @@ end
 #             @. cache.d += σ * cache.p
 #             return cache.d
 #         end
-        
+
 #         # Update solution
 #         @. cache.d += cache.alpha * cache.p
 #         @. cache.v += cache.alpha * cache.Hp
-        
+
 #         # Check bounds
 #         if any(cache.d .<= l) || any(cache.d .>= u)
 #             touch_bound = true
 #         end
-        
+
 #         # Update gradient
 #         cache.vv = dot(cache.v, cache.v)
 #         if sqrt(cache.vv) < tol
 #             return cache.d
 #         end
-        
+
 #         # Update search direction
 #         cache.beta = cache.vv / dot(cache.g, cache.v)
 #         copyto!(cache.g, cache.v)
 #         @. cache.p = -cache.v + cache.beta * cache.p
-        
+
 #         k += 1
 #     end
-    
+
 #     return cache.d
 # end

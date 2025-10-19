@@ -1,5 +1,6 @@
 function lm_trust_region(
-    res::Function, jac::Function,
+    res::Function,
+    jac::Function,
     x0::Array{T},
     subproblem_strategy::SubProblemStrategy = SVDSolve(),
     scaling_strategy::ScalingStrategy = NoScaling();
@@ -15,7 +16,7 @@ function lm_trust_region(
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
     norm_overrides_initial_radius::Bool = true,
-    ) where T
+) where {T}
 
     # Initialize
     x = copy(x0)
@@ -34,7 +35,7 @@ function lm_trust_region(
         return x, f, g, 0
     end
     #iterations
-    for iter in 1:max_iter
+    for iter = 1:max_iter
         # Compute step using QR-facorization
         λ, δ = solve_subproblem(subproblem_strategy, J, f, radius, cache)
         # Evaluate new point
@@ -46,7 +47,7 @@ function lm_trust_region(
         # Predicted reduction using QR factorization
         Jδ = J * δ
         #predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
-        predicted_reduction = 0.5*dot(Jδ, Jδ)+ λ*dot(δ,δ)
+        predicted_reduction = 0.5*dot(Jδ, Jδ)+λ*dot(δ, δ)
         if predicted_reduction <= 0 #this potentially means the δ is wrong but we leave some margin
             println("Non-positive predicted reduction, shrinking radius")
             radius *= shrink_factor
@@ -67,7 +68,9 @@ function lm_trust_region(
             cost = cost_new
             J = jac(x)
             g = J' * f
-            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            println(
+                "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
+            )
             # Check convergence
             if norm(g, 2) < gtol
                 println("Gradient convergence criterion reached")
@@ -88,7 +91,7 @@ function lm_trust_region(
         if radius < min_trust_radius
             println("Trust region radius below minimum")
             return x, f, g, iter
-        end        
+        end
     end
     println("Maximum number of iterations reached")
     return x, f, g, max_iter

@@ -22,7 +22,7 @@ function svd_regularized_solve(svdls, b, λ)
     V = svdls.V
     σs = svdls.S
     n = length(σs)
-    x_svd = sum([σs[i]/(σs[i]^2 + λ)*U[:,i]'*b*V[:,i] for i in 1:n])
+    x_svd = sum([σs[i]/(σs[i]^2 + λ)*U[:, i]'*b*V[:, i] for i = 1:n])
     return x_svd
 end
 
@@ -49,7 +49,7 @@ function svd_regularized_solve_scaled!(svdls, b, λ, d)
     V = svdls.V
     σs = svdls.S
     n = length(σs)
-    x_svd = sum([σs[i]/(σs[i]^2 + λ*d[i]^2)*U[:,i]'*b*V[:,i] for i in 1:n])
+    x_svd = sum([σs[i]/(σs[i]^2 + λ*d[i]^2)*U[:, i]'*b*V[:, i] for i = 1:n])
     return x_svd
 end
 
@@ -65,7 +65,7 @@ function solve_for_dpdλ(svdls, b, λ)
     V = svdls.V
     σs = svdls.S
     n = length(σs)
-    dpdλ = sum([-σs[i]/(σs[i]^2 + λ)^2*U[:,i]'*b*V[:,i] for i in 1:n])
+    dpdλ = sum([-σs[i]/(σs[i]^2 + λ)^2*U[:, i]'*b*V[:, i] for i = 1:n])
     return dpdλ
 end
 
@@ -128,16 +128,16 @@ The method maintains lower (`lₖ`) and upper (`uₖ`) bounds on λ and uses:
 - KALTENBACH, Marius, 2022. The Levenberg-Marquardt Method and 
     its Implementation in Python [Master thesis]. Konstanz: Universität Konstanz
 """
-function find_λ_svd(Δ, svdls, J, f, maxiters, θ=1e-4)
+function find_λ_svd(Δ, svdls, J, f, maxiters, θ = 1e-4)
     l₀ = 0.0
     u₀ = norm(J'f)/Δ
-    λ₀ = max(1e-3*u₀,√(l₀*u₀))
+    λ₀ = max(1e-3*u₀, √(l₀*u₀))
     λ = λ₀
     uₖ = u₀
     lₖ = l₀
     p = zeros(size(J, 2))
     dpdλ = zeros(size(J, 2))
-    for i in 1:maxiters
+    for i = 1:maxiters
         p .= svd_regularized_solve(svdls, -f, λ)
         if (1-θ)*Δ < norm(p) < (1+θ)*Δ
             break
@@ -151,7 +151,7 @@ function find_λ_svd(Δ, svdls, J, f, maxiters, θ=1e-4)
         dpdλ .= solve_for_dpdλ(svdls, -f, λ)
         λ = λ - (norm(p)-Δ)/Δ*(p'p)/(p'dpdλ)
         if !(uₖ < λ <= lₖ)
-            λ = max(lₖ+0.01*(uₖ-lₖ),√(lₖ*uₖ))
+            λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))
         end
     end
     println("Final step norm: ", norm(p))

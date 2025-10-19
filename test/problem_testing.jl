@@ -11,25 +11,28 @@ nls_problems = find_nlls_problems(999)
 
 
 solvers = [
-        ("LM-QR", nonlinearlstr.lm_trust_region),
-        ("LM-QR-scaled", nonlinearlstr.lm_trust_region),
-        ("LM-SVD", nonlinearlstr.lm_trust_region),
-        ("PRIMA-NEWUOA", nothing),  # Special handling
-        ("PRIMA-BOBYQA", nothing),  # Special handling
-        ("NonlinearSolve-TrustRegion", NonlinearSolve.TrustRegion),  # Special handling
-        ("NonlinearSolve-LevenbergMarquardt", NonlinearSolve.LevenbergMarquardt),  # Special handling
-        ("NonlinearSolve-GaussNewton", NonlinearSolve.GaussNewton),  # Special handling
-        ("NonlinearSolve-PolyAlg", NonlinearSolve.FastShortcutNLLSPolyalg),  # Special handling
-        ("JSO-TRON", tron),  # Special handling
-        ("JSO-TRUNK", trunk),  # Special handling
-        ("LSO-DogLeg-QR", LeastSquaresOptim.Dogleg(LeastSquaresOptim.QR())),
-        ("LSO-Levenberg-QR", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.QR())),
-        ("LSO-DogLeg-chol", LeastSquaresOptim.Dogleg(LeastSquaresOptim.Cholesky())),
-        ("LSO-Levenberg-chol", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.Cholesky())),
-        ("Scipy-LeastSquares", nothing),  # Special handling
-    ]
+    ("LM-QR", nonlinearlstr.lm_trust_region),
+    ("LM-QR-scaled", nonlinearlstr.lm_trust_region),
+    ("LM-SVD", nonlinearlstr.lm_trust_region),
+    ("PRIMA-NEWUOA", nothing),  # Special handling
+    ("PRIMA-BOBYQA", nothing),  # Special handling
+    ("NonlinearSolve-TrustRegion", NonlinearSolve.TrustRegion),  # Special handling
+    ("NonlinearSolve-LevenbergMarquardt", NonlinearSolve.LevenbergMarquardt),  # Special handling
+    ("NonlinearSolve-GaussNewton", NonlinearSolve.GaussNewton),  # Special handling
+    ("NonlinearSolve-PolyAlg", NonlinearSolve.FastShortcutNLLSPolyalg),  # Special handling
+    ("JSO-TRON", tron),  # Special handling
+    ("JSO-TRUNK", trunk),  # Special handling
+    ("LSO-DogLeg-QR", LeastSquaresOptim.Dogleg(LeastSquaresOptim.QR())),
+    ("LSO-Levenberg-QR", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.QR())),
+    ("LSO-DogLeg-chol", LeastSquaresOptim.Dogleg(LeastSquaresOptim.Cholesky())),
+    (
+        "LSO-Levenberg-chol",
+        LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.Cholesky()),
+    ),
+    ("Scipy-LeastSquares", nothing),  # Special handling
+]
 
-nls_results = nlls_benchmark(nls_problems, solvers, max_iter=400)
+nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 400)
 #cutest_results = nlls_benchmark(cutest_problems, solvers, max_iter=100)
 
 # Convert to DataFrame

@@ -21,10 +21,10 @@ This function updates the affine scaling matrix `Dk` and its inverse `inv_Dk` ba
 """
 function update_Dk!(affine_cache, u, lb, ub, gk, Δ, ϵ)
     (; Dk, inv_Dk, ak, bk) = affine_cache
-    
+
     # Pre-allocate for the numerator of tk
     tk_numerator_sq = 0.0
-    
+
     # Store indices to avoid re-computation
     index_map = zeros(Int, length(u)) # 0 for neither, 1 for S_k^1, 2 for S_k^2
 

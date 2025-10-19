@@ -39,9 +39,15 @@ d = tcg(H, g, d, Δ, l, u, tol, max_iter)
 - Conn, A. R., Gould, N. I., & Toint, P. L. (2000). Chapter 7. The Trust-Region subproblem. Trust region methods. Siam.
 - Powell, M. J. D. (2009). The BOBYQA algorithm for bound constrained optimization without derivatives. Cambridge NA Report NA2009/06.
 """
-function tcg(H, g::AbstractVector,Δ::Real,
-             l::AbstractVector, u::AbstractVector,
-             tol::Real, max_iter::Int)
+function tcg(
+    H,
+    g::AbstractVector,
+    Δ::Real,
+    l::AbstractVector,
+    u::AbstractVector,
+    tol::Real,
+    max_iter::Int,
+)
     # Step 1: Initialization
     n = length(g)
     d = zeros(n) #Initial guess is zero (Powell, 2009)
@@ -50,13 +56,13 @@ function tcg(H, g::AbstractVector,Δ::Real,
     p = -v
     s = ones(Int, n) # inactive set
     touch_bound = false
-    for i in 1:max_iter
+    for i = 1:max_iter
         # Step 1: Update active set
         if touch_bound
             println("bound touched")
             for j in eachindex(d)
-                if (abs(d[j] - l[j]) < tol && g[j] ≥ 0) || 
-                (abs(d[j] - u[j]) < tol && g[j] ≤ 0)
+                if (abs(d[j] - l[j]) < tol && g[j] ≥ 0) ||
+                   (abs(d[j] - u[j]) < tol && g[j] ≤ 0)
                     p[s] .= 0
                 end
             end
@@ -89,7 +95,7 @@ function tcg(H, g::AbstractVector,Δ::Real,
             end
             return d + σ*p
         end
-        
+
         if any((d + α*p) .≤ l)
             α = minimum((l-d) ./ p)
             touch_bound = true
@@ -154,23 +160,29 @@ handles bound constraints using an active set strategy similar to the TRSBOX met
 - Powell, M. J. D. (2009). The BOBYQA algorithm for bound constrained optimization without derivatives. Cambridge NA Report NA2009/06.
 
 """
-function tcgnlss(f::AbstractVector, J::AbstractMatrix, Δ::Real,
-    l::AbstractVector, u::AbstractVector,
-    tol::Real, max_iter::Int)
+function tcgnlss(
+    f::AbstractVector,
+    J::AbstractMatrix,
+    Δ::Real,
+    l::AbstractVector,
+    u::AbstractVector,
+    tol::Real,
+    max_iter::Int,
+)
     # Step 1: Initialization
-    d = zeros(size(J,2)) #Initial guess is zero Powell(2009)
+    d = zeros(size(J, 2)) #Initial guess is zero Powell(2009)
     g = J'f
     v = g
     p = -v
     s = Int[] # inactive set
     k = 0 #iteration counter
     touch_bound = false
-    for i in 1:max_iter
+    for i = 1:max_iter
         # Step 1: Update active set
         if touch_bound
             for j in eachindex(d)
-                if (abs(d[j] - l[j]) < tol && g[j] ≥ 0) || 
-                (abs(d[j] - u[j]) < tol && g[j] ≤ 0)
+                if (abs(d[j] - l[j]) < tol && g[j] ≥ 0) ||
+                   (abs(d[j] - u[j]) < tol && g[j] ≤ 0)
                     push!(s, j)
                 end
             end
@@ -196,7 +208,7 @@ function tcgnlss(f::AbstractVector, J::AbstractMatrix, Δ::Real,
             end
             return d + σ*p
         end
-        
+
         if any(d + α*p .≤ l)
             α = minimum((l-d) ./ p)
             touch_bound = true
@@ -246,14 +258,24 @@ It seeks to find a step `d` from `xopt` that approximately minimizes
 - `crvmin`: The minimum curvature encountered during the CG steps, or 0.0 if the boundary was hit.
 """
 function trsbox!(
-    n::Int, npt::Int,
-    xpt::AbstractMatrix, xopt::AbstractVector, gopt::AbstractVector,
-    hq::AbstractVector, pq::AbstractVector,
-    sl::AbstractVector, su::AbstractVector,
+    n::Int,
+    npt::Int,
+    xpt::AbstractMatrix,
+    xopt::AbstractVector,
+    gopt::AbstractVector,
+    hq::AbstractVector,
+    pq::AbstractVector,
+    sl::AbstractVector,
+    su::AbstractVector,
     delta::Float64,
     # Workspace arrays (modified in-place)
-    xnew::AbstractVector, d::AbstractVector, gnew::AbstractVector,
-    xbdi::AbstractVector, s::AbstractVector, hs::AbstractVector, hred::AbstractVector
+    xnew::AbstractVector,
+    d::AbstractVector,
+    gnew::AbstractVector,
+    xbdi::AbstractVector,
+    s::AbstractVector,
+    hs::AbstractVector,
+    hred::AbstractVector,
 )
 
     # --- Helper function for Hessian-vector product ---
@@ -264,8 +286,8 @@ function trsbox!(
         fill!(hs_out, 0.0)
         # Handle the packed symmetric part `hq`
         ih = 0
-        for j in 1:n
-            for i in 1:j
+        for j = 1:n
+            for i = 1:j
                 ih += 1
                 if i < j
                     hs_out[j] += hq[ih] * s_in[i]
@@ -274,7 +296,7 @@ function trsbox!(
             end
         end
         # Handle the low-rank updates from `pq`
-        for k in 1:npt
+        for k = 1:npt
             if pq[k] != 0.0
                 temp = dot(@view(xpt[k, :]), s_in)
                 temp *= pq[k]
@@ -289,7 +311,7 @@ function trsbox!(
     # at a bound initially. nact is the number of fixed variables.
     iterc = 0
     nact = 0
-    for i in 1:n
+    for i = 1:n
         xbdi[i] = 0.0
         if xopt[i] <= sl[i]
             if gopt[i] >= 0.0
@@ -329,7 +351,7 @@ function trsbox!(
                 # Set the search direction. It's steepest descent on the first iteration
                 # of a restart (when beta == 0).
                 stepsq = 0.0
-                for i in 1:n
+                for i = 1:n
                     if xbdi[i] != 0.0
                         s[i] = 0.0
                     elseif beta == 0.0
@@ -350,13 +372,13 @@ function trsbox!(
                     gredsq = stepsq
                     itermax = iterc + n - nact
                 else
-                    for i in 1:n
+                    for i = 1:n
                         if xbdi[i] == 0.0
                             gredsq += gnew[i]^2
                         end
                     end
                 end
-                
+
                 # Termination check for small projected gradient
                 if gredsq * delsq <= 1.0e-4 * qred^2
                     main_loop_active = false
@@ -370,7 +392,7 @@ function trsbox!(
                 resid = delsq
                 ds = 0.0
                 shs = 0.0
-                for i in 1:n
+                for i = 1:n
                     if xbdi[i] == 0.0
                         resid -= d[i]^2
                         ds += s[i] * d[i]
@@ -392,7 +414,7 @@ function trsbox!(
 
                 # Reduce stplen if necessary to preserve simple bounds.
                 iact = 0
-                for i in 1:n
+                for i = 1:n
                     if s[i] != 0.0
                         xsum = xopt[i] + d[i]
                         temp = s[i] > 0.0 ? (su[i] - xsum) / s[i] : (sl[i] - xsum) / s[i]
@@ -412,10 +434,10 @@ function trsbox!(
                         crvmin = crvmin == -1.0 ? temp : min(crvmin, temp)
                     end
                     ggsav = gredsq
-                    
+
                     # Update gnew and d
                     gredsq_new = 0.0
-                    for i in 1:n
+                    for i = 1:n
                         gnew[i] += stplen * hs[i]
                         if xbdi[i] == 0.0
                             gredsq_new += gnew[i]^2
@@ -423,7 +445,7 @@ function trsbox!(
                         d[i] += stplen * s[i]
                     end
                     gredsq = gredsq_new
-                    
+
                     sdec = max(0.0, stplen * (ggsav - 0.5 * stplen * shs))
                     qred += sdec
                 end
@@ -473,7 +495,7 @@ function trsbox!(
             dredsq = 0.0
             dredg = 0.0
             gredsq = 0.0
-            for i in 1:n
+            for i = 1:n
                 s[i] = xbdi[i] == 0.0 ? d[i] : 0.0
                 if xbdi[i] == 0.0
                     dredsq += d[i]^2
@@ -481,10 +503,10 @@ function trsbox!(
                     gredsq += gnew[i]^2
                 end
             end
-            
+
             # First Hessian-vector product for the 2D search
             hess_vec_prod!(hred, s) # hred now holds H*d_reduced
-            
+
             # Let the search direction S be a linear combination of reduced D and G
             # that is orthogonal to reduced D (label 120).
             iterc += 1
@@ -494,16 +516,16 @@ function trsbox!(
             end
             temp = sqrt(temp)
 
-            for i in 1:n
+            for i = 1:n
                 s[i] = xbdi[i] == 0.0 ? (dredg * d[i] - dredsq * gnew[i]) / temp : 0.0
             end
             sredg = -temp
-            
+
             # Calculate bound on the angle of the alternative iteration (ANGBD)
             angbd = 1.0
             iact = 0
             xsav = 0.0
-            for i in 1:n
+            for i = 1:n
                 if xbdi[i] == 0.0
                     tempa = xopt[i] + d[i] - sl[i]
                     tempb = su[i] - xopt[i] - d[i]
@@ -518,7 +540,7 @@ function trsbox!(
                         is_in_cg_phase = true
                         @goto restart_main_loop
                     end
-                    
+
                     ssq = d[i]^2 + s[i]^2
                     temp = ssq - (xopt[i] - sl[i])^2
                     if temp > 0.0
@@ -540,15 +562,15 @@ function trsbox!(
                     end
                 end
             end
-            
+
             # Second Hessian-vector product
             hess_vec_prod!(hs, s) # hs now holds H*s
-            
+
             # Curvatures for the alternative iteration (label 150)
             shs = 0.0
             dhs = 0.0
             dhd = 0.0
-            for i in 1:n
+            for i = 1:n
                 if xbdi[i] == 0.0
                     shs += s[i] * hs[i]
                     dhs += d[i] * hs[i]
@@ -563,8 +585,8 @@ function trsbox!(
             rdprev = 0.0
             rdnext = 0.0
             iu = round(Int, 17.0 * angbd + 3.1)
-            
-            for i in 1:iu
+
+            for i = 1:iu
                 angt = angbd * i / iu
                 sth = 2.0 * angt / (1.0 + angt^2)
                 temp = shs + angt * (angt * dhd - 2.0 * dhs)
@@ -601,13 +623,13 @@ function trsbox!(
 
             # Update gnew, d for the 2D step
             qred += sdec
-            for i in 1:n
+            for i = 1:n
                 gnew[i] += (cth - 1.0) * hred[i] + sth * hs[i]
                 if xbdi[i] == 0.0
                     d[i] = cth * d[i] + sth * s[i]
                 end
             end
-            
+
             # If the angle was restricted by a bound, fix that variable and restart.
             if iact > 0 && isav == iu
                 nact += 1
@@ -620,9 +642,9 @@ function trsbox!(
             if sdec <= 0.01 * qred
                 break
             end
-            
+
             # This 'continue' simulates the 'go to 120' to try another 2D step
-            is_in_cg_phase = false 
+            is_in_cg_phase = false
             @label restart_main_loop
             # The loop will naturally continue here unless a break was hit.
         end
@@ -631,7 +653,7 @@ function trsbox!(
     # --- Finalization (label 190) ---
     # Set xnew to xopt + d, carefully respecting the bounds.
     dsq = 0.0
-    for i in 1:n
+    for i = 1:n
         xnew[i] = min(su[i], max(sl[i], xopt[i] + d[i]))
         if xbdi[i] == -1.0
             xnew[i] = sl[i]

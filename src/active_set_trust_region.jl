@@ -30,16 +30,16 @@ efficiently solve the constrained optimization problem that arises in trust regi
 function solve_substep(J, f, radius)
     svdls = svd(J)
     δgn = svdls \ -f
-        if norm(δgn) <= radius
-            # The minimal-norm step that perfectly fits the model is within the radius.
-            # This is the ideal solution. There is no need to make the step longer.
-            δ = δgn
-            λ = 0.0
-        else
-            # The smallest "perfect" step is too big. We must find a damped
-            # step on the boundary using the standard LM approach.
-            λ, δ = find_λ_svd(radius, svdls, J, f, 100)
-        end
+    if norm(δgn) <= radius
+        # The minimal-norm step that perfectly fits the model is within the radius.
+        # This is the ideal solution. There is no need to make the step longer.
+        δ = δgn
+        λ = 0.0
+    else
+        # The smallest "perfect" step is too big. We must find a damped
+        # step on the boundary using the standard LM approach.
+        λ, δ = find_λ_svd(radius, svdls, J, f, 100)
+    end
     return λ, δ
 end
 
@@ -74,16 +74,18 @@ The algorithm uses an iterative active set approach:
 - A warning is printed if maximum iterations are reached without convergence
 - The function assumes `solve_substep(J, f, radius)` is available for solving unconstrained trust region subproblems
 """
-function solve_bounded_subproblem(J, f, radius, lb, ub, maxiters=20)
-    
+function solve_bounded_subproblem(J, f, radius, lb, ub, maxiters = 20)
+
     #trial solution
     λ, δ = solve_substep(J, f, radius)
     δ .= clamp.(δ, lb, ub) # enforce bounds
     # evaluate the inactive set
     Jδ = J * δ
     g = J'*(Jδ + f) # gradient ∇ₓ of ½‖f + Jδ‖²
-    inactive = Bool[lb[i] < ub[i] && (δ[i] != lb[i] || g[i] ≤ 0) &&
-                    (δ[i] != ub[i] || g[i] ≥ 0) for i in eachindex(δ)]
+    inactive = Bool[
+        lb[i] < ub[i] && (δ[i] != lb[i] || g[i] ≤ 0) && (δ[i] != ub[i] || g[i] ≥ 0) for
+        i in eachindex(δ)
+    ]
     all(inactive) && return λ, δ
     active = map(!, inactive)
     δprev = copy(δ)
@@ -91,14 +93,14 @@ function solve_bounded_subproblem(J, f, radius, lb, ub, maxiters=20)
         #currentΔ = norm(δ)
         #radius_remaining = sqrt(max(0, radius^2 - currentΔ^2))
         #radius_remaining == 0 && return λ, δ # no more room to move
-        λa, δa = solve_substep(J[:,inactive], f + J[:,active]*δ[active], radius)
+        λa, δa = solve_substep(J[:, inactive], f + J[:, active]*δ[active], radius)
         δ[inactive] = δa
         @. δ = clamp(δ, lb, ub)
         # λ += λa # update the Lagrange multipliers (not sure if this is correct)
         g .= mul!(g, J', J*δ) .+ J'f
         for i in eachindex(δ)
-            inactive[i] = lb[i] < ub[i] && (δ[i] != lb[i] || g[i] ≤ 0) &&
-                (δ[i] != ub[i] || g[i] ≥ 0)
+            inactive[i] =
+                lb[i] < ub[i] && (δ[i] != lb[i] || g[i] ≤ 0) && (δ[i] != ub[i] || g[i] ≥ 0)
         end
         all(i -> inactive[i] == !active[i], eachindex(active)) && return λ, δ # convergence: active set unchanged 
         norm(δ - δprev) ≤ eps(float(eltype(δ)))*sqrt(length(δ)) && return λ, δ # convergence: x not changing much
@@ -163,7 +165,8 @@ Convergence is achieved when either:
 - Progress information is printed during iterations for monitoring convergence
 """
 function active_set_svd_trust_region(
-    res::Function, jac::Function,
+    res::Function,
+    jac::Function,
     x0::Array{T};
     lb::Array{T} = fill(-Inf, length(x0)),
     ub::Array{T} = fill(Inf, length(x0)),
@@ -179,7 +182,7 @@ function active_set_svd_trust_region(
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
     τ::Real = 1e-12,
-    ) where T
+) where {T}
 
     # Initialize
     x = copy(x0)
@@ -197,7 +200,7 @@ function active_set_svd_trust_region(
         return x, f, g, 0
     end
     #iterations
-    for iter in 1:max_iter
+    for iter = 1:max_iter
         λ, δ = solve_bounded_subproblem(J, f, radius, lb - x, ub - x, 20)
         # Evaluate new point
         x_new = x + δ
@@ -229,7 +232,9 @@ function active_set_svd_trust_region(
             cost = cost_new
             J = jac(x)
             g = J' * f
-            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            println(
+                "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
+            )
             # Check convergence
             if norm(g, 2) < gtol
                 println("Gradient convergence criterion reached")
@@ -246,7 +251,7 @@ function active_set_svd_trust_region(
         if radius < min_trust_radius
             println("Trust region radius below minimum")
             return x, f, g, iter
-        end        
+        end
     end
     println("Maximum number of iterations reached")
     return x, f, g, max_iter
@@ -283,16 +288,16 @@ optimization problem with scaling matrices D and A applied.
 function solve_scaled_substep(J, f, radius, D, A)
     qrJ = qr(J)
     δgn = qrJ \ -f
-        if norm(δgn) <= radius
-            # The minimal-norm step that perfectly fits the model is within the radius.
-            # This is the ideal solution. There is no need to make the step longer.
-            δ = δgn
-            λ = 0.0
-        else
-            # The smallest "perfect" step is too big. We must find a damped
-            # step on the boundary using the standard LM approach.
-            λ, δ = find_λ_scaled_b(radius, J, A, D, f, 100)
-        end
+    if norm(δgn) <= radius
+        # The minimal-norm step that perfectly fits the model is within the radius.
+        # This is the ideal solution. There is no need to make the step longer.
+        δ = δgn
+        λ = 0.0
+    else
+        # The smallest "perfect" step is too big. We must find a damped
+        # step on the boundary using the standard LM approach.
+        λ, δ = find_λ_scaled_b(radius, J, A, D, f, 100)
+    end
     return λ, δ
 end
 
@@ -324,16 +329,18 @@ with additional scaling matrices A and D for improved conditioning near bounds.
 - The scaling matrices A and D are typically computed by `affine_scale_matrix`
 - Convergence behavior is similar to `solve_bounded_subproblemm` but with improved conditioning
 """
-function solve_bounded_subproblem_scaled(J, A, D, f, radius, lb, ub, maxiters=20)
-    
+function solve_bounded_subproblem_scaled(J, A, D, f, radius, lb, ub, maxiters = 20)
+
     #trial solution
     λ, δ = solve_scaled_substep(J, f, radius, D, A)
     δ .= clamp.(δ, lb, ub) # enforce bounds
     # evaluate the inactive set
     Jδ = J * δ
     g = J'*(Jδ + f) # gradient ∇ₓ of ½‖f + Jδ‖²
-    inactive = Bool[lb[i] < ub[i] && (δ[i] != lb[i] || g[i] ≤ 0) &&
-                    (δ[i] != ub[i] || g[i] ≥ 0) for i in eachindex(δ)]
+    inactive = Bool[
+        lb[i] < ub[i] && (δ[i] != lb[i] || g[i] ≤ 0) && (δ[i] != ub[i] || g[i] ≥ 0) for
+        i in eachindex(δ)
+    ]
     all(inactive) && return λ, δ
     active = map(!, inactive)
     δprev = copy(δ)
@@ -343,14 +350,20 @@ function solve_bounded_subproblem_scaled(J, A, D, f, radius, lb, ub, maxiters=20
         radius_remaining == 0 && return λ, δ # no more room to move
         D_inactive = Diagonal(diag(D)[inactive])
         A_inactive = Diagonal(diag(A)[inactive])
-        λa, δa = solve_scaled_substep(J[:,inactive], f + J[:,active]*δ[active], radius_remaining, D_inactive, A_inactive)
+        λa, δa = solve_scaled_substep(
+            J[:, inactive],
+            f + J[:, active]*δ[active],
+            radius_remaining,
+            D_inactive,
+            A_inactive,
+        )
         δ[inactive] = δa
         @. δ = clamp(δ, lb, ub)
         λ += λa # update the Lagrange multipliers (not sure if this is correct)
         g .= mul!(g, J', J*δ) .+ J'f
         for i in eachindex(δ)
-            inactive[i] = lb[i] < ub[i] && (δ[i] != lb[i] || g[i] ≤ 0) &&
-                (δ[i] != ub[i] || g[i] ≥ 0)
+            inactive[i] =
+                lb[i] < ub[i] && (δ[i] != lb[i] || g[i] ≤ 0) && (δ[i] != ub[i] || g[i] ≥ 0)
         end
         all(i -> inactive[i] == !active[i], eachindex(active)) && return λ, δ # convergence: active set unchanged 
         norm(δ - δprev) ≤ eps(float(eltype(δ)))*sqrt(length(δ)) && return λ, δ # convergence: x not changing much
@@ -408,7 +421,8 @@ Similar to `active_set_svd_trust_region` but with affine scaling:
 - Otherwise behaves identically to the unscaled version
 """
 function active_set_svd_trust_region_scaled(
-    res::Function, jac::Function,
+    res::Function,
+    jac::Function,
     x0::Array{T};
     lb::Array{T} = fill(-Inf, length(x0)),
     ub::Array{T} = fill(Inf, length(x0)),
@@ -424,7 +438,7 @@ function active_set_svd_trust_region_scaled(
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
     τ::Real = 1e-12,
-    ) where T
+) where {T}
 
     # Initialize
     x = copy(x0)
@@ -441,9 +455,9 @@ function active_set_svd_trust_region_scaled(
         println("Initial guess satisfies gradient tolerance")
         return x, f, g, 0
     end
-    Dk, A  = affine_scale_matrix(x, lb, ub, g)
+    Dk, A = affine_scale_matrix(x, lb, ub, g)
     #iterations
-    for iter in 1:max_iter
+    for iter = 1:max_iter
         λ, δ = solve_bounded_subproblem_scaled(J, A, Dk, f, radius, lb - x, ub - x, 20)
         # Evaluate new point
         x_new = x + δ
@@ -454,7 +468,7 @@ function active_set_svd_trust_region_scaled(
         # Predicted reduction using QR factorization
         Jδ = J * δ
         #predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
-        predicted_reduction = 0.5*dot(Jδ, Jδ)+ λ*dot(δ,δ)
+        predicted_reduction = 0.5*dot(Jδ, Jδ)+λ*dot(δ, δ)
         if predicted_reduction <= 0 #this potentially means the δ is wrong but we leave some margin
             println("Non-positive predicted reduction, shrinking radius")
             radius *= shrink_factor
@@ -475,7 +489,9 @@ function active_set_svd_trust_region_scaled(
             cost = cost_new
             J = jac(x)
             g = J' * f
-            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            println(
+                "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
+            )
             # Check convergence
             if norm(g, 2) < gtol
                 println("Gradient convergence criterion reached")
@@ -485,7 +501,7 @@ function active_set_svd_trust_region_scaled(
                 println("Function tolerance criterion reached")
                 return x, f, g, iter
             end
-            Dk, A  = affine_scale_matrix(x, lb, ub, g)
+            Dk, A = affine_scale_matrix(x, lb, ub, g)
         else
             println("Step rejected, ρ = $ρ")
         end
@@ -493,7 +509,7 @@ function active_set_svd_trust_region_scaled(
         if radius < min_trust_radius
             println("Trust region radius below minimum")
             return x, f, g, iter
-        end        
+        end
     end
     println("Maximum number of iterations reached")
     return x, f, g, max_iter

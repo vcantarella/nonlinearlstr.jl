@@ -17,7 +17,7 @@ function affine_scale_matrix(x, lb, ub, g; ϵ = 1e-16)
             jᵥ[i] = 0
         end
     end
-    D = Diagonal(diagm(1 ./sqrt.(abs.(v).+ϵ)))
+    D = Diagonal(diagm(1 ./ sqrt.(abs.(v) .+ ϵ)))
     Jᵥ = Diagonal(diagm(g)) * Diagonal(diagm(jᵥ))
     return D, Jᵥ, v
 end

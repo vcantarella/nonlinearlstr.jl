@@ -11,7 +11,7 @@ function solve_gauss_newton(J, r::AbstractVector)
     hard_case = false
     if rank(J) < size(J, 2)
         # Use SVD for rank-deficient case
-        δ = svd(J)\ -r 
+        δ = svd(J)\-r
         hard_case = true
     else
         δ = J \ -r  # Solve J δ = -r directly for full rank (implemented as QR by default)
@@ -41,20 +41,20 @@ for efficiency and robustness.
 function solve_gauss_newton_v2(J, r::AbstractVector)
     # 1. Compute the SVD factorization once. This is our single source of truth.
     F = svd(J)
-    
+
     # 2. Compute the minimal-norm Gauss-Newton step using the SVD object.
     δ = F \ -r
-    
+
     # 3. Determine the effective rank from the singular values.
     # A robust tolerance for identifying "zero" singular values.
     # F.S[1] is the largest singular value. If the matrix is all zeros,
     # F.S[1] will be zero, and eps(0.0) is a very small number, which is fine.
     tol = maximum(size(J)) * eps(F.S[1])
-    
+
     # Count how many singular values are greater than the tolerance.
     # This is the effective rank of the matrix J.
     effective_rank = count(s -> s > tol, F.S)
-    
+
     # 4. Check for rank deficiency (the hard case condition).
     # Does a non-trivial null space exist?
     if effective_rank < size(J, 2)
@@ -64,7 +64,7 @@ function solve_gauss_newton_v2(J, r::AbstractVector)
         # effective_rank is strictly less than the number of columns.
         null_space_idx = effective_rank + 1
         z = F.V[:, null_space_idx]
-        
+
         return δ, z, true
 
     else
@@ -77,7 +77,7 @@ function solve_gauss_newton_v3(J, r::AbstractVector)
     # This function now correctly handles both tall (m>=n) and wide (m<n) matrices.
     F = svd(J)
     δ = F \ -r
-    
+
     # Determine rank deficiency for the m >= n case.
     # For m < n, the matrix is always "rank-deficient" in the sense of having a null space.
     is_rank_deficient = false
@@ -122,27 +122,37 @@ box constraints `lo ≤ x ≤ hi` (elementwise).  (An upper/lower bound may
 be `±Inf`, respectively, to remove a constraint.)
 Source: stevengj (https://discourse.julialang.org/t/suggestions-needed-for-bound-constrained-least-squares-solver/35611/13)
 """
-function lsq_box(A::AbstractMatrix{<:Number}, b::AbstractVector{<:Number}, lo::AbstractVector{<:Number}, hi::AbstractVector{<:Number};
-                 maxiter::Integer=100, rtol::Real=eps(float(eltype(A)))*sqrt(size(A,2)), atol::Real=0)
+function lsq_box(
+    A::AbstractMatrix{<:Number},
+    b::AbstractVector{<:Number},
+    lo::AbstractVector{<:Number},
+    hi::AbstractVector{<:Number};
+    maxiter::Integer = 100,
+    rtol::Real = eps(float(eltype(A)))*sqrt(size(A, 2)),
+    atol::Real = 0,
+)
     Base.require_one_based_indexing(A, b, lo, hi)
     x = A \ b
     @. x = clamp(x, lo, hi)
     #AᵀA = A'*A
     Aᵀb = A'b
-    g = A'*(A*x); g .-= Aᵀb # gradient ∇ₓ of ½‖b - Ax‖²
-    inactive = Bool[lo[i] < hi[i] && (x[i] != lo[i] || g[i] ≤ 0) &&
-                    (x[i] != hi[i] || g[i] ≥ 0) for i in eachindex(x)]
+    g = A'*(A*x);
+    g .-= Aᵀb # gradient ∇ₓ of ½‖b - Ax‖²
+    inactive = Bool[
+        lo[i] < hi[i] && (x[i] != lo[i] || g[i] ≤ 0) && (x[i] != hi[i] || g[i] ≥ 0) for
+        i in eachindex(x)
+    ]
     all(inactive) && return x
     active = map(!, inactive)
     xprev = copy(x)
     for iter = 1:maxiter
-        xa = A[:,inactive] \ (b - A[:,active]*x[active])
+        xa = A[:, inactive] \ (b - A[:, active]*x[active])
         x[inactive] = xa
         @. x = clamp(x, lo, hi)
         g .= mul!(g, A', A*x) .- Aᵀb
         for i in eachindex(x)
-            inactive[i] = lo[i] < hi[i] && (x[i] != lo[i] || g[i] ≤ 0) &&
-                (x[i] != hi[i] || g[i] ≥ 0)
+            inactive[i] =
+                lo[i] < hi[i] && (x[i] != lo[i] || g[i] ≤ 0) && (x[i] != hi[i] || g[i] ≥ 0)
         end
         all(i -> inactive[i] == !active[i], eachindex(active)) && return x # convergence: active set unchanged 
         norm(x - xprev) ≤ max(rtol*norm(x), atol) && return x # convergence: x not changing much
@@ -170,7 +180,7 @@ end
 #     # Augmented system for regularization:
 #     # [J]     [δ]   = [-r]
 #     # [√λ*I]         [0]
-    
+
 #     if λ > 0
 #         # Create augmented QR system
 #         m, n = size(J)
@@ -187,7 +197,7 @@ end
 #     else
 #         δ_gn = solve_gauss_newton(J, qrls, residuals)
 #     end
-    
+
 #     # Check bounds and trust region constraints
 #     δ_bounded = clamp.(δ_gn, lb - x, ub - x)
 #     # if norm(δ_bounded) <= radius
@@ -211,20 +221,20 @@ end
 #     # Using augmented system approach:
 #     # [J]     [δ]   = [-r]
 #     # [√λ*I]         [0]
-    
+
 #     m, n = qrls.m, qrls.n
 #     J_aug = [qrls.Q * qrls.R; sqrt(λ) * I(n)]
 #     r_aug = [residuals; zeros(T, n)]
-    
+
 #     # QR factorization of augmented system
 #     F_aug = qr(J_aug)
 #     Q_aug = Matrix(F_aug.Q)
 #     R_aug = Matrix(F_aug.R)
-    
+
 #     # Solve
 #     rhs = -Q_aug' * r_aug
 #     δ = R_aug \ rhs
-    
+
 #     return δ
 # end
 

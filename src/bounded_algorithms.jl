@@ -3,7 +3,8 @@ include("colemanli.jl")
 include("bounded_lm.jl")
 
 function lm_double_trust_region(
-    res::Function, jac::Function,
+    res::Function,
+    jac::Function,
     x0::Array{T};
     lb::Array{T} = fill(-Inf, length(x0)),
     ub::Array{T} = fill(Inf, length(x0)),
@@ -19,7 +20,7 @@ function lm_double_trust_region(
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
     τ::Real = 1e-12,
-    ) where T
+) where {T}
 
     # Initialize
     x = copy(x0)
@@ -31,16 +32,16 @@ function lm_double_trust_region(
         println("Initial guess satisfies gradient tolerance")
         return x, f, g, 0
     end
-    m,n = size(J)
-    Dk, A  = affine_scale_matrix(x, lb, ub, g)
-    δgn = [J;√A*Dk] \ [-f;zeros(n)]
+    m, n = size(J)
+    Dk, A = affine_scale_matrix(x, lb, ub, g)
+    δgn = [J; √A*Dk] \ [-f; zeros(n)]
     initial_radius = norm(Dk*δgn)
     radius = initial_radius
-    for iter in 1:max_iter
+    for iter = 1:max_iter
         # Compute step using QR-based trust region
         m, n = size(J)
         if iter > 1
-            δgn = [J;√A*Dk] \ [-f;zeros(n)] # avoid extra computation
+            δgn = [J; √A*Dk] \ [-f; zeros(n)] # avoid extra computation
         end
         if norm(Dk * δgn) <= radius
             # The minimal-norm step that perfectly fits the model is within the radius.
@@ -86,13 +87,13 @@ function lm_double_trust_region(
         s_k = (theta * tau_star) * p_k
 
         # Use s_k (not δ) from here on
-        δ = s_k 
+        δ = s_k
         # Evaluate new point
         x_new = x + δ
         f_new = res(x_new)
         cost_new = 0.5 * dot(f_new, f_new)
         Ck = Dk * A * Dk
-        Ψ = g'*δ + 1/2*(δ'* (J'J + Ck) * δ)
+        Ψ = g'*δ + 1/2*(δ' * (J'J + Ck) * δ)
         numerator = cost_new - cost + 1/2*δ'*Ck*δ
         ρᶠ = numerator / Ψ # definition of the step improvement
         # in Coleman & Li.
@@ -158,8 +159,8 @@ function lm_double_trust_region(
 
         # 7. Finally, calculate the true ρᶜ
         # Ensure the denominator isn't zero or positive (model must predict decrease)
-        ρᶜ = Ψˢ < 0 ? Ψ / Ψˢ : Inf 
-        
+        ρᶜ = Ψˢ < 0 ? Ψ / Ψˢ : Inf
+
         # Accept or reject step
         if ρᶠ > μ && ρᶜ > β
             x .= x_new
@@ -167,8 +168,10 @@ function lm_double_trust_region(
             cost = cost_new
             J .= jac(x)
             g .= J' * f
-            Dk, A  = affine_scale_matrix(x, lb, ub, g)
-            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            Dk, A = affine_scale_matrix(x, lb, ub, g)
+            println(
+                "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
+            )
             # Check convergence
             if norm(g, 2) < gtol
                 println("Gradient convergence criterion reached")
@@ -180,7 +183,7 @@ function lm_double_trust_region(
             # end
             # Update trust region radius
             if (ρᶠ >= expand_threshold) && (λ > 0)
-                if  (ρᶜ >= expand_threshold)
+                if (ρᶜ >= expand_threshold)
                     radius = min(max_trust_radius, expand_factor * radius)
                 end
             end
@@ -194,7 +197,7 @@ function lm_double_trust_region(
         if radius < min_trust_radius
             println("Trust region radius below minimum")
             return x, f, g, iter
-        end        
+        end
     end
     println("Maximum number of iterations reached")
     return x, f, g, max_iter
@@ -203,7 +206,8 @@ end
 
 
 function lm_interior_and_trust_region(
-    res::Function, jac::Function,
+    res::Function,
+    jac::Function,
     x0::Array{T};
     lb::Array{T} = fill(-Inf, length(x0)),
     ub::Array{T} = fill(Inf, length(x0)),
@@ -219,7 +223,7 @@ function lm_interior_and_trust_region(
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
     τ::Real = 1e-12,
-    ) where T
+) where {T}
 
     # Initialize
     x = copy(x0)
@@ -231,16 +235,16 @@ function lm_interior_and_trust_region(
         println("Initial guess satisfies gradient tolerance")
         return x, f, g, 0
     end
-    m,n = size(J)
-    Dk, A  = affine_scale_matrix(x, lb, ub, g)
-    δgn = [J;√A*Dk] \ [-f;zeros(n)]
+    m, n = size(J)
+    Dk, A = affine_scale_matrix(x, lb, ub, g)
+    δgn = [J; √A*Dk] \ [-f; zeros(n)]
     initial_radius = norm(Dk*δgn)
     radius = initial_radius
-    for iter in 1:max_iter
+    for iter = 1:max_iter
         # Compute step using QR-based trust region
         m, n = size(J)
         if iter > 1
-            δgn = [J;√A*Dk] \ [-f;zeros(n)] # avoid extra computation
+            δgn = [J; √A*Dk] \ [-f; zeros(n)] # avoid extra computation
         end
         if norm(Dk * δgn) <= radius
             # The minimal-norm step that perfectly fits the model is within the radius.
@@ -286,10 +290,10 @@ function lm_interior_and_trust_region(
         s_k = (theta * tau_star) * p_k
 
         # Use s_k (not δ) from here on
-        δ = s_k 
-        
+        δ = s_k
+
         Ck = Dk * A * Dk
-        Ψ = g'*δ + 1/2*(δ'* (J'J + Ck) * δ)
+        Ψ = g'*δ + 1/2*(δ' * (J'J + Ck) * δ)
 
 
         # 1. Define the scaled gradient direction
@@ -341,7 +345,7 @@ function lm_interior_and_trust_region(
         f_new = res(x_new)
         cost_new = 0.5 * dot(f_new, f_new)
         numerator = cost_new - cost + 1/2*δ'*Ck*δ
-        Ψ = g'*δ + 1/2*(δ'* (J'J + Ck) * δ)
+        Ψ = g'*δ + 1/2*(δ' * (J'J + Ck) * δ)
         ρᶠ = numerator / Ψ # definition of the step improvement
         # Accept or reject step
         if ρᶠ > μ
@@ -350,8 +354,10 @@ function lm_interior_and_trust_region(
             cost = cost_new
             J .= jac(x)
             g .= J' * f
-            Dk, A  = affine_scale_matrix(x, lb, ub, g)
-            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            Dk, A = affine_scale_matrix(x, lb, ub, g)
+            println(
+                "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
+            )
             # Check convergence
             if norm(g, 2) < gtol
                 println("Gradient convergence criterion reached")
@@ -363,7 +369,7 @@ function lm_interior_and_trust_region(
             # end
             # Update trust region radius
             if (ρᶠ >= expand_threshold) && (λ > 0)
-                if  (ρᶜ >= expand_threshold)
+                if (ρᶜ >= expand_threshold)
                     radius = min(max_trust_radius, expand_factor * radius)
                 end
             end
@@ -377,7 +383,7 @@ function lm_interior_and_trust_region(
         if radius < min_trust_radius
             println("Trust region radius below minimum")
             return x, f, g, iter
-        end        
+        end
     end
     println("Maximum number of iterations reached")
     return x, f, g, max_iter
@@ -385,7 +391,8 @@ end
 
 
 function lm_trust_region_reflective(
-    res::Function, jac::Function,
+    res::Function,
+    jac::Function,
     x0::Array{T};
     lb::Array{T} = fill(-Inf, length(x0)),
     ub::Array{T} = fill(Inf, length(x0)),
@@ -401,7 +408,7 @@ function lm_trust_region_reflective(
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
     τ::Real = 1e-12,
-    ) where T
+) where {T}
 
     # Initialize
     x = copy(x0)
@@ -413,15 +420,15 @@ function lm_trust_region_reflective(
         println("Initial guess satisfies gradient tolerance")
         return x, f, g, 0
     end
-    m,n = size(J)
-    Dk, A  = affine_scale_matrix(x, lb, ub, g)
-    δgn = [J;√A*Dk] \ [-f;zeros(n)]
+    m, n = size(J)
+    Dk, A = affine_scale_matrix(x, lb, ub, g)
+    δgn = [J; √A*Dk] \ [-f; zeros(n)]
     initial_radius = norm(Dk*δgn)
     radius = initial_radius
-    for iter in 1:max_iter
+    for iter = 1:max_iter
         # Compute step using QR-based trust region
         if iter > 1
-            δgn = [J;√A*Dk] \ [-f;zeros(n)] # avoid extra computation
+            δgn = [J; √A*Dk] \ [-f; zeros(n)] # avoid extra computation
         end
         if norm(Dk * δgn) <= radius
             # The minimal-norm step that perfectly fits the model is within the radius.
@@ -455,7 +462,7 @@ function lm_trust_region_reflective(
         # 2. Calculate alpha_boundary and identify which bounds are hit
         alpha_boundary = Inf
         hits = zeros(Int, n) # To store which bounds are hit
-        
+
         for i in eachindex(p_k)
             alpha_i = Inf
             hit_i = 0
@@ -481,10 +488,10 @@ function lm_trust_region_reflective(
         s_k = (theta * tau_star) * p_k
 
         # Use s_k (not δ) from here on
-        δ = s_k 
-        
+        δ = s_k
+
         Ck = Dk * A * Dk
-        Ψ = g'*δ + 1/2*(δ'* (J'J + Ck) * δ)
+        Ψ = g'*δ + 1/2*(δ' * (J'J + Ck) * δ)
 
         # --- REFLECTIVE STEP CALCULATION (Corrected) ---
         if tau_star < 1.0 && any(hits .!= 0)
@@ -498,7 +505,7 @@ function lm_trust_region_reflective(
             # 3. Perform a line search for the reflected part of the step
             #    The search is for a step `s_part2` along `p_refl`
             #    The total step will be `s_boundary + s_part2`
-            
+
             # The remaining trust region radius for the second part of the step
             radius_remaining = radius^2 - norm(Dk * s_boundary)^2
             if radius_remaining < 0
@@ -516,9 +523,11 @@ function lm_trust_region_reflective(
             α_boundary_refl = Inf
             for i in eachindex(p_refl)
                 if p_refl[i] < 0 && lb[i] > -Inf
-                    α_boundary_refl = min(α_boundary_refl, (lb[i] - x_on_boundary[i]) / p_refl[i])
+                    α_boundary_refl =
+                        min(α_boundary_refl, (lb[i] - x_on_boundary[i]) / p_refl[i])
                 elseif p_refl[i] > 0 && ub[i] < Inf
-                    α_boundary_refl = min(α_boundary_refl, (ub[i] - x_on_boundary[i]) / p_refl[i])
+                    α_boundary_refl =
+                        min(α_boundary_refl, (ub[i] - x_on_boundary[i]) / p_refl[i])
                 end
             end
             τ_boundary_refl = Θ * α_boundary_refl
@@ -531,7 +540,7 @@ function lm_trust_region_reflective(
             sᵣ = s_boundary + s_part2
 
             # Calculate the model value for this new reflected step
-            Ψ_refl = g'*sᵣ + 0.5*(sᵣ'* Mₖ * sᵣ)
+            Ψ_refl = g'*sᵣ + 0.5*(sᵣ' * Mₖ * sᵣ)
 
             # If the reflected step improves the model value, accept it as the new trial step
             if Ψ_refl < Ψ
@@ -600,7 +609,7 @@ function lm_trust_region_reflective(
             end
             continue
         end
-        Ψ = g'*δ + 1/2*(δ'* (J'J+ Ck) * δ) #
+        Ψ = g'*δ + 1/2*(δ' * (J'J + Ck) * δ) #
         ρᶠ = numerator / Ψ # definition of the step improvement
         # Accept or reject step
         if ρᶠ > μ
@@ -609,8 +618,10 @@ function lm_trust_region_reflective(
             cost = cost_new
             J .= jac(x)
             g .= J' * f
-            Dk, A  = affine_scale_matrix(x, lb, ub, g)
-            println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+            Dk, A = affine_scale_matrix(x, lb, ub, g)
+            println(
+                "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
+            )
             # Check convergence
             if norm(g, 2) < gtol
                 println("Gradient convergence criterion reached")
@@ -622,7 +633,7 @@ function lm_trust_region_reflective(
             # end
             # Update trust region radius
             if (ρᶠ >= expand_threshold) && (λ > 0)
-                if  (ρᶜ >= expand_threshold)
+                if (ρᶜ >= expand_threshold)
                     radius = min(max_trust_radius, expand_factor * radius)
                 end
             end
@@ -636,7 +647,7 @@ function lm_trust_region_reflective(
         if radius < min_trust_radius
             println("Trust region radius below minimum")
             return x, f, g, iter
-        end        
+        end
     end
     println("Maximum number of iterations reached")
     return x, f, g, max_iter
@@ -644,7 +655,8 @@ end
 
 
 function lm_trust_region_reflective_v2(
-    res::Function, jac::Function,
+    res::Function,
+    jac::Function,
     x0::Array{T};
     lb::Array{T} = fill(-Inf, length(x0)),
     ub::Array{T} = fill(Inf, length(x0)),
@@ -659,7 +671,7 @@ function lm_trust_region_reflective_v2(
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
     τ::Real = 1e-12,
-    ) where T
+) where {T}
 
     # Initialize
     x = copy(x0)
@@ -673,15 +685,15 @@ function lm_trust_region_reflective_v2(
     end
     # check x0 is within bounds and restrict it to bounds
     #x = clamp.(x, lb, ub)
-    m,n = size(J)
-    Dk, A, v  = affine_scale_matrix(x, lb, ub, g)
-    δgn = [J;√A*Dk] \ [-f;zeros(n)]
+    m, n = size(J)
+    Dk, A, v = affine_scale_matrix(x, lb, ub, g)
+    δgn = [J; √A*Dk] \ [-f; zeros(n)]
     initial_radius = norm(Dk*δgn)
     radius = initial_radius
-    for iter in 1:max_iter
+    for iter = 1:max_iter
         # Compute step using QR-based trust region
         if iter > 1
-            δgn = [J;√A*Dk] \ [-f;zeros(n)] # avoid extra computation
+            δgn = [J; √A*Dk] \ [-f; zeros(n)] # avoid extra computation
         end
         if norm(Dk * δgn) <= radius
             # The minimal-norm step that perfectly fits the model is within the radius.
@@ -725,7 +737,7 @@ function lm_trust_region_reflective_v2(
 
         if α_boundary > 1.0
             δ = pₖ*0.995
-            Ψ = g'*δ + 1/2*(δ'* Mₖ * δ)
+            Ψ = g'*δ + 1/2*(δ' * Mₖ * δ)
         else
             # 3. The final step is limited by the boundary and then scaled back
             τ⁺ = min(1.0, α_boundary)
@@ -745,7 +757,7 @@ function lm_trust_region_reflective_v2(
             # end
             sₖ = τ⁺ * pₖ
             δ = sₖ
-            Ψ = g'*δ + 1/2*(δ'* Mₖ * δ)
+            Ψ = g'*δ + 1/2*(δ' * Mₖ * δ)
             # --- REFLECTIVE STEP CALCULATION (Coleman & Li) ---
             # Only consider reflection if the step actually hit a boundary (tau_star < 1.0)
             if τ⁺ < 1.0 && any(hits .!= 0)
@@ -759,7 +771,7 @@ function lm_trust_region_reflective_v2(
                 # 3. Perform a line search for the reflected part of the step
                 #    The search is for a step `s_part2` along `p_refl`
                 #    The total step will be `s_boundary + s_part2`
-                
+
                 # The remaining trust region radius for the second part of the step
                 radius_remaining = radius - norm(Dk * p_refl)
                 if radius_remaining < 0
@@ -775,9 +787,11 @@ function lm_trust_region_reflective_v2(
                 α_boundary_refl = Inf
                 for i in eachindex(p_refl)
                     if p_refl[i] < 0 && lb[i] > -Inf
-                        α_boundary_refl = min(α_boundary_refl, (lb[i] - x_on_boundary[i]) / p_refl[i])
+                        α_boundary_refl =
+                            min(α_boundary_refl, (lb[i] - x_on_boundary[i]) / p_refl[i])
                     elseif p_refl[i] > 0 && ub[i] < Inf
-                        α_boundary_refl = min(α_boundary_refl, (ub[i] - x_on_boundary[i]) / p_refl[i])
+                        α_boundary_refl =
+                            min(α_boundary_refl, (ub[i] - x_on_boundary[i]) / p_refl[i])
                     end
                 end
                 τ_boundary_refl = Θ * α_boundary_refl
@@ -790,7 +804,8 @@ function lm_trust_region_reflective_v2(
                     τ_part2 = -dot(g, p_refl) / a
                     if τ_part2 > τ_part2max
                         τ_part2 = τ_part2max
-                    else τ_part2 <= 0
+                    else
+                        τ_part2 <= 0
                         τ_part2 = 0
                     end
                 else
@@ -803,7 +818,7 @@ function lm_trust_region_reflective_v2(
                 sᵣ = s_boundary + s_part2
 
                 # Calculate the model value for this new reflected step
-                Ψ_refl = g'*sᵣ + 0.5*(sᵣ'* Mₖ * sᵣ)
+                Ψ_refl = g'*sᵣ + 0.5*(sᵣ' * Mₖ * sᵣ)
                 # If the reflected step improves the model value, accept it as the new trial step
                 if Ψ_refl < Ψ
                     println("  -> Accepting reflective step")
@@ -855,7 +870,7 @@ function lm_trust_region_reflective_v2(
                 println("  -> Accepting gradient step")
             end
         end
-        
+
         # Evaluate new point
         x_new = x + δ
         f_new = res(x_new)
@@ -874,8 +889,10 @@ function lm_trust_region_reflective_v2(
                 cost = cost_new
                 J .= jac(x)
                 g .= J' * f
-                Dk, A, v  = affine_scale_matrix(x, lb, ub, g)
-                println("Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius")
+                Dk, A, v = affine_scale_matrix(x, lb, ub, g)
+                println(
+                    "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
+                )
                 # Check convergence
                 if norm(g, 2) < gtol
                     println("Gradient convergence criterion reached")
@@ -900,7 +917,7 @@ function lm_trust_region_reflective_v2(
         if radius < min_trust_radius
             println("Trust region radius below minimum")
             return x, f, g, iter
-        end        
+        end
     end
     println("Maximum number of iterations reached")
     return x, f, g, max_iter

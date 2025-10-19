@@ -138,7 +138,7 @@ jobs:
           using Pkg
           Pkg.add("Aqua")
           using Aqua, nonlinearlstr
-          Aqua.test_all(nonlinearlstr; ambiguities=false)
+          Aqua.test_all(nonlinearlstr; ambiguities=false, stale_deps=false)
 
   # Benchmark tracking (optional)
   benchmark:

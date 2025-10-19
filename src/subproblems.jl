@@ -73,13 +73,18 @@ Create a cache object with factorization and scaling information.
 - `J`: Jacobian matrix to factorize
 - `kwargs...`: Additional keyword arguments passed to the scaling function
 """
-mutable struct SubproblemCache{S<:SubProblemStrategy, F, D}
+mutable struct SubproblemCache{S<:SubProblemStrategy,F,D}
     factorization::F
     scaling_matrix::D
-    SubproblemCache(strategy::S, scaling_strat::Sc, J::AbstractMatrix; kwargs...) where {S<:SubProblemStrategy, Sc<:ScalingStrategy} = begin
+    SubproblemCache(
+        strategy::S,
+        scaling_strat::Sc,
+        J::AbstractMatrix;
+        kwargs...,
+    ) where {S<:SubProblemStrategy,Sc<:ScalingStrategy} = begin
         F = factorize(strategy, J)
         Dk = scaling(scaling_strat, J; kwargs)
-        new{S, typeof(F), typeof(Dk)}(F, Dk)
+        new{S,typeof(F),typeof(Dk)}(F, Dk)
     end
 end
 
@@ -108,8 +113,13 @@ where D is the scaling matrix from the cache.
 If the Gauss-Newton step ‖δ_gn‖ ≤ radius, then λ = 0 and δ = δ_gn.
 Otherwise, finds λ > 0 such that ‖D*δ‖ = radius using iterative methods.
 """
-function solve_subproblem(strategy::SubProblemStrategy, J::AbstractMatrix{T},
-                          f::AbstractVector{T}, radius::Real, cache) where {T<:Real}
+function solve_subproblem(
+    strategy::SubProblemStrategy,
+    J::AbstractMatrix{T},
+    f::AbstractVector{T},
+    radius::Real,
+    cache,
+) where {T<:Real}
     F = cache.factorization
     Dk = cache.scaling_matrix
     δgn = F \ -f
@@ -150,17 +160,17 @@ This function solves for λ such that ‖D*p‖ = Δ where p solves:
 Uses Newton's method with safeguarding to find λ. The search is constrained
 between lower bound l₀ = 0 and upper bound u₀ = ‖D*(Jᵀf)‖/Δ.
 """
-function find_λ_scaled(strategy::QRSolve, F, Δ, J, D, f, maxiters, θ=1e-4)
+function find_λ_scaled(strategy::QRSolve, F, Δ, J, D, f, maxiters, θ = 1e-4)
     l₀ = 0.0
     u₀ = norm(D*(J'f))/Δ
-    λ₀ = max(1e-3*u₀,√(l₀*u₀))
+    λ₀ = max(1e-3*u₀, √(l₀*u₀))
     λ = λ₀
     uₖ = u₀
     lₖ = l₀
     p = zeros(size(J, 2))
     b_aug = [-f; zeros(size(J, 2))]
-    for i in 1:maxiters
-        F = qr([J;√λ*D])
+    for i = 1:maxiters
+        F = qr([J; √λ*D])
         p = F \ b_aug
         # p = solve_augmented(strategy, J, D, b_aug, -f, λ)
         if (1-θ)*Δ < norm(D*p) < (1+θ)*Δ
@@ -175,7 +185,7 @@ function find_λ_scaled(strategy::QRSolve, F, Δ, J, D, f, maxiters, θ=1e-4)
         dpdλ = solve_for_dp_dlambda_scaled(strategy::QRSolve, F, p, D)
         λ = λ - (norm(D*p)-Δ)/Δ*((D*p)'*(D*p)/(p'*D'*(D*dpdλ)))
         if !(uₖ < λ <= lₖ)
-            λ = max(lₖ+0.01*(uₖ-lₖ),√(lₖ*uₖ))
+            λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))
         end
     end
     return λ, p
@@ -208,15 +218,15 @@ the SVD factorization to solve the regularized system.
 Uses Newton's method with safeguarding to find λ. The step computation
 uses the SVD factorization for numerical stability with ill-conditioned systems.
 """
-function find_λ_scaled(strategy::SVDSolve, F, Δ, J, D, f, maxiters, θ=1e-4)
+function find_λ_scaled(strategy::SVDSolve, F, Δ, J, D, f, maxiters, θ = 1e-4)
     l₀ = 0.0
     u₀ = norm(D*(J'f))/Δ
-    λ₀ = max(1e-3*u₀,√(l₀*u₀))
+    λ₀ = max(1e-3*u₀, √(l₀*u₀))
     λ = λ₀
     uₖ = u₀
     lₖ = l₀
     p = zeros(size(J, 2))
-    for i in 1:maxiters
+    for i = 1:maxiters
         p = solve_augmented(strategy::SVDSolve, F, J, D, -f, λ)
         if (1-θ)*Δ < norm(D*p) < (1+θ)*Δ
             break
@@ -230,7 +240,7 @@ function find_λ_scaled(strategy::SVDSolve, F, Δ, J, D, f, maxiters, θ=1e-4)
         dpdλ = solve_for_dp_dlambda_scaled(strategy::SVDSolve, F, D, λ, -f)
         λ = λ - (norm(D*p)-Δ)/Δ*((D*p)'*(D*p)/(p'*D'*(D*dpdλ)))
         if !(uₖ < λ <= lₖ)
-            λ = max(lₖ+0.01*(uₖ-lₖ),√(lₖ*uₖ))
+            λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))
         end
     end
     return λ, p
@@ -262,14 +272,21 @@ left and right singular vectors.
 # Returns
 - `δ`: Solution vector to the regularized system
 """
-function solve_augmented(::SVDSolve, svdls::LinearAlgebra.SVD, J::AbstractMatrix, D::Diagonal, b::AbstractVector, λ::Real)
+function solve_augmented(
+    ::SVDSolve,
+    svdls::LinearAlgebra.SVD,
+    J::AbstractMatrix,
+    D::Diagonal,
+    b::AbstractVector,
+    λ::Real,
+)
     U = svdls.U
     V = svdls.V
     σs = svdls.S
     n = length(σs)
     δ = zeros(size(J, 2))
-    for i in 1:n
-        δ += (σs[i]/(σs[i]^2 + λ*D[i,i]^2))*(U[:,i]'*b)*V[:,i]
+    for i = 1:n
+        δ += (σs[i]/(σs[i]^2 + λ*D[i, i]^2))*(U[:, i]'*b)*V[:, i]
     end
     return δ
 end
@@ -298,8 +315,12 @@ Using the QR factorization, this is solved as:
 # Returns
 - `dp_dλ`: Derivative of step direction with respect to λ
 """
-function solve_for_dp_dlambda_scaled(::QRSolve, qrf::Union{LinearAlgebra.QR, LinearAlgebra.QRCompactWY},
-    p::AbstractVector, D::AbstractMatrix)
+function solve_for_dp_dlambda_scaled(
+    ::QRSolve,
+    qrf::Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY},
+    p::AbstractVector,
+    D::AbstractMatrix,
+)
     # Perform the QRSolve factorization to get the factors explicitly
     R = qrf.R
     rhs = -(D'*(D*p))
@@ -333,7 +354,13 @@ For p = Σᵢ (σᵢ/(σᵢ² + λdᵢ²)) * (uᵢᵀb) * vᵢ, the derivative i
 # Returns
 - `dpdλ`: Derivative of step direction with respect to λ
 """
-function solve_for_dp_dlambda_scaled(::SVDSolve, svdls::LinearAlgebra.SVD, D::AbstractMatrix, λ, b)
+function solve_for_dp_dlambda_scaled(
+    ::SVDSolve,
+    svdls::LinearAlgebra.SVD,
+    D::AbstractMatrix,
+    λ,
+    b,
+)
     # Perform the SVDSolve factorization to get the factors explicitly
     U = svdls.U
     V = svdls.V
@@ -343,9 +370,9 @@ function solve_for_dp_dlambda_scaled(::SVDSolve, svdls::LinearAlgebra.SVD, D::Ab
     n = length(σs)
     # Calculate dδ/dλ using the derived formula
     dpdλ = zeros(size(V, 1))
-    for i in 1:n
+    for i = 1:n
         coeff = -σs[i] * d[i]^2 / (σs[i]^2 + λ * d[i]^2)^2
-        dpdλ += coeff * dot(U[:,i], b) * V[:,i]
+        dpdλ += coeff * dot(U[:, i], b) * V[:, i]
     end
     return dpdλ
 end

@@ -48,13 +48,59 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install gcc
+      - name: Install Fortran compiler (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran
+      - name: Install Fortran compiler (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc-fortran
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
+      - name: Debug Fortran
+        run: |
+          echo "Runner OS: $RUNNER_OS"
+          which gfortran || true
+          gfortran --version || true
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@v1
-      - uses: julia-actions/julia-runtest@v1
+
+      # Prepare test project and ensure SciPy is installed into the repository-local
+      # CondaPkg environment so PythonCall can reliably import it during Pkg.test.
+      - name: Instantiate test project and install SciPy
+        run: |
+          julia --project=test -e 'using Pkg; Pkg.instantiate()'
+          julia --project=test -e 'using CondaPkg; CondaPkg.add("scipy")'
+
+      # On Unix-like runners use the repo-local CondaPkg python and rebuild PythonCall
+      - name: Build PythonCall and run tests (unix)
+        if: runner.os != 'Windows'
+        run: |
+          PY="${{ github.workspace }}/test/.CondaPkg/.pixi/envs/default/bin/python"
+          echo "Using python: $PY"
+          export PYTHON="$PY"
+          julia --project=test -e 'using Pkg; Pkg.build("PythonCall")'
+          julia --project=test -e 'using Pkg; Pkg.test()'
+
+      # Windows runner: use the Scripts/python.exe path
+      - name: Build PythonCall and run tests (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $PY = "${{ github.workspace }}\test\.CondaPkg\.pixi\envs\default\Scripts\python.exe"
+          Write-Host "Using python: $PY"
+          $env:PYTHON = $PY
+          julia --project=test -e 'using Pkg; Pkg.build("PythonCall")'
+          julia --project=test -e 'using Pkg; Pkg.test()'
+
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:

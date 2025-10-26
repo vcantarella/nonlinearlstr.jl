@@ -36,6 +36,7 @@ function evaluate_solvers(df_proc::DataFrame)
 end
 
 function build_performance_plots(df_proc::DataFrame)
+    colormap = :Paired_12
     fig = Figure()
     # Plot 1: Fraction solved vs time
     ax1 = Axis(
@@ -49,6 +50,7 @@ function build_performance_plots(df_proc::DataFrame)
     solvers = sort(unique(df_proc.solver))
     problems = unique(df_proc.problem)
     num_problems = length(problems)
+    c = 1 # color index
     for solver_n in solvers
         df_solver = filter(row -> row.solver == solver_n, df_proc)
         sort!(df_solver, :time)
@@ -59,6 +61,7 @@ function build_performance_plots(df_proc::DataFrame)
             df_solver.cumulative_success,
             label = solver_n,
             linewidth = 2,
+            colormap = colormap,
         )
     end
     # Plot 2: Success rate comparison
@@ -67,7 +70,7 @@ function build_performance_plots(df_proc::DataFrame)
         xlabel = "Solver",
         ylabel = "Success Rate (%)",
         title = "Success Rate by Solver",
-        xticklabelrotation = 45,
+        xticklabelrotation = (30/180)*π,
     )
     summary_df = evaluate_solvers(df_proc)
     n_solvers = nrow(summary_df)

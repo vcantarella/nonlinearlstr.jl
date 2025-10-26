@@ -1,6 +1,7 @@
+include("nlls_problems_prep.jl")
 using PRIMA
 using NonlinearSolve
-using Pkg, Revise
+using Revise
 using DataFrames, CSV, CairoMakie
 using LeastSquaresOptim
 using ForwardDiff
@@ -8,6 +9,8 @@ using LinearAlgebra, Statistics
 using nonlinearlstr
 using BenchmarkTools
 using PythonCall
+using Test
+
 scipy = pyimport("scipy")
 
 # Hard Problems in Luksan, 1995
@@ -96,208 +99,74 @@ resa6(x) = [fa6(x, t) - y for (t, y) in zip(ti6, yi6)]
 x06 = [1e3, 0.01, 2, 100]
 resa6(x06)
 
-function build_problems(resf, x0)
-    jac = x -> ForwardDiff.jacobian(resf, x)
-    prob_data = (
-        res = resf,
-        jac = jac,
-        grad = x->jac(x)'resf(x),
-        obj = x -> 0.5 * dot(resf(x), resf(x)),
-        x0 = x0,
-        initial_obj = 0.5 * dot(resf(x0), resf(x0)),
-    )
-    return prob_data
-end
+# Reuse the test helpers from nlls_problems_prep.jl
 
-solvers =
-    solvers = [
-        ("LM-QR", nonlinearlstr.lm_trust_region),
-        ("LM-SVD", nonlinearlstr.lm_trust_region),
-        ("PRIMA-NEWUOA", PRIMA.newuoa),  # Special handling
-        ("PRIMA-BOBYQA", PRIMA.bobyqa),  # Special handling
-        ("NL-TrustRegion", NonlinearSolve.TrustRegion),  # Special handling
-        ("NL-LevenbergMarquardt", NonlinearSolve.LevenbergMarquardt),  # Special handling
-        ("NL-GaussNewton", NonlinearSolve.GaussNewton),  # Special handling
-        ("NL-PolyAlg", NonlinearSolve.FastShortcutNLLSPolyalg),  # Special handling
-        ("Scipy-LeastSquares", nothing),  # Special handling
-    ]
-function solve_non(
-    solver_func,
-    prob_data;
-    maxiters,
-    strat,
-    scaling = nonlinearlstr.NoScaling(),
-)
-    residual_func = prob_data.res
-    jac_func = prob_data.jac
-    grad_func = prob_data.grad
-    obj_func = prob_data.obj
-    x0 = prob_data.x0
-    initial_obj = prob_data.initial_obj
-    sol = nonlinearlstr.lm_trust_region(
-        residual_func,
-        jac_func,
-        x0,
-        strat,
-        scaling;
-        max_iter = maxiters,
-    )
-    x, f_opt, g_opt, iter = sol
-    # Basic convergence tests
-    converged = norm(g_opt, 2) < 1e-6
-    cost = 0.5 * dot(f_opt, f_opt)
-    # solve one more time to get the timing
-    t = @elapsed nonlinearlstr.lm_trust_region(
-        residual_func,
-        jac_func,
-        x0,
-        strat,
-        scaling;
-        max_iter = maxiters,
-    )
+# Reuse the same solvers list used by the main nlls benchmark (keep names consistent)
+solvers = [
+    ("LM-QR", nonlinearlstr.lm_trust_region),
+    ("LM-QR-scaled", nonlinearlstr.lm_trust_region),
+    ("LM-SVD", nonlinearlstr.lm_trust_region),
+    ("PRIMA-NEWUOA", nothing),  # Special handling
+    ("PRIMA-BOBYQA", nothing),  # Special handling
+    ("NonlinearSolve-TrustRegion", NonlinearSolve.TrustRegion),
+    ("NonlinearSolve-LevenbergMarquardt", NonlinearSolve.LevenbergMarquardt),
+    ("NonlinearSolve-GaussNewton", NonlinearSolve.GaussNewton),
+    ("NonlinearSolve-PolyAlg", NonlinearSolve.FastShortcutNLLSPolyalg),
+    ("JSO-TRON", tron),
+    ("JSO-TRUNK", trunk),
+    ("LSO-DogLeg-QR", LeastSquaresOptim.Dogleg(LeastSquaresOptim.QR())),
+    ("LSO-Levenberg-QR", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.QR())),
+    ("LSO-DogLeg-chol", LeastSquaresOptim.Dogleg(LeastSquaresOptim.Cholesky())),
+    ("LSO-Levenberg-chol", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.Cholesky())),
+    ("LSO-DogLeg-LSMR", LeastSquaresOptim.Dogleg(LeastSquaresOptim.LSMR())),
+    ("LSO-Levenberg-LSMR", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.LSMR())),
+    ("Scipy-LeastSquares", nothing),
+    ("Scipy-LSMR", nothing),
+    ("NLLSsolver-levenbergmarquardt", NLLSsolver.levenbergmarquardt),
+    ("NLLSsolver-dogleg", NLLSsolver.dogleg),
+]
 
+# Adapter: convert local (resf,x0) into the prob_data shape expected by test_solver_on_problem
+function make_prob_data_from_res(resf, x0)
+    jac(x) = ForwardDiff.jacobian(resf, x)
+    n, m = jac(x0) |> size
     return (
+        n = n,
+        m = m,
         x0 = x0,
-        x_opt = x,
-        converged = converged,
-        iterations = iter,
-        initial_cost = initial_obj,
-        final_cost = cost,
-        time = t,
-    )
-end
-function solve_nlsolve(solver_func, prob_data; maxiters)
-    residual_func = prob_data.res
-    nl_res(u, p) = residual_func(u)
-    jac_func = prob_data.jac
-    x0 = prob_data.x0
-    initial_obj = prob_data.initial_obj
-
-    nlprob = NonlinearLeastSquaresProblem(nl_res, x0)
-    sol = solve(
-        nlprob,
-        solver_func();
-        maxiters = maxiters,
-        show_trace = Val(true),
-        trace_level = TraceAll(),
-    )
-    x_opt = sol.u
-    f_opt = residual_func(x_opt)
-    g_opt = jac_func(x_opt)' * f_opt  # Gradient of 0.
-    iter = sol.stats.nsteps
-    # Basic convergence tests
-    converged = norm(g_opt, 2) < 1e-6
-    cost = 0.5 * dot(f_opt, f_opt)
-    t = @elapsed solve(nlprob, solver_func(); maxiters = maxiters)
-    return (
-        x0 = x0,
-        x_opt = x_opt,
-        converged = converged,
-        iterations = iter,
-        initial_cost = initial_obj,
-        final_cost = cost,
-        time = t,
-    )
-end
-function solve_prima(solver_func, prob_data; maxiters)
-    residual_func = prob_data.res
-    obj = prob_data.obj
-    jac_func = prob_data.jac
-    x0 = prob_data.x0
-    initial_obj = prob_data.initial_obj
-    res = solver_func(obj, x0)
-    x_opt = res[1]
-    f_opt = residual_func(x_opt)
-    g_opt = jac_func(x_opt)' * f_opt  # Gradient of 0.
-    iter = res[2].nf
-    # Basic convergence tests
-    converged = PRIMA.issuccess(res[2])
-    cost = 0.5 * dot(f_opt, f_opt)
-    t = @elapsed solver_func(obj, x0)
-    return (
-        x0 = x0,
-        x_opt = x_opt,
-        converged = converged,
-        iterations = iter,
-        initial_cost = initial_obj,
-        final_cost = cost,
-        time = t,
+        bl = fill(-Inf, size(x0, 1)),
+        bu = fill(Inf, size(x0, 1)),
+        residual_func = resf,
+        jacobian_func = jac,
+        obj_func = x -> 0.5 * dot(resf(x), resf(x)),
+        grad_func = x -> jac(x)' * resf(x),
+        hess_func = x -> jac(x)' * jac(x),
+        problem = "Hard-Luksan",
     )
 end
 
-function solve_scipy(solver_func, prob_data; maxiters)
-    residual_func = prob_data.res
-    jac_func = prob_data.jac
-    x0 = prob_data.x0
-    initial_obj = prob_data.initial_obj
-
-    pyresult = scipy.optimize.least_squares(
-        residual_func,
-        x0,
-        jac = jac_func,
-        xtol = 1e-8,
-        gtol = 1e-6,
-        max_nfev = maxiters,
-        verbose = 2,
-    )
-    x_opt = pyconvert(Vector{Float64}, pyresult.x)
-    f_opt = residual_func(x_opt)
-    g_opt = jac_func(x_opt)' * f_opt  # Gradient of 0.
-    iter = pyconvert(Int, pyresult.nfev)
-    # Basic convergence tests
-    converged = pyconvert(Bool, pyresult.success) == true
-    cost = 0.5 * dot(f_opt, f_opt)
-    t = @elapsed scipy.optimize.least_squares(
-        residual_func,
-        x0,
-        jac = jac_func,
-        xtol = 1e-8,
-        gtol = 1e-6,
-        max_nfev = maxiters,
-        verbose = 2,
-    )
-    return (
-        x0 = x0,
-        x_opt = x_opt,
-        converged = converged,
-        iterations = iter,
-        initial_cost = initial_obj,
-        final_cost = cost,
-        time = t,
-    )
-end
-
+# Build problems (original and log-scale) using the adapter and call the shared test harness
 problems = [
-    build_problems(res, x0) for (res, x0) in
+    make_prob_data_from_res(res, x0) for (res, x0) in
     zip([resa1, resa2, resa3, resa4, resa5, resa6], [x01, x02, x03, x04, x05, x06])
 ]
 problem_names = ["A.1", "A.2", "A.3", "A.4", "A.5", "A.6"]
+
 results = []
-for (name, prob) in zip(problem_names, problems)
+for (name, prob_data) in zip(problem_names, problems)
     println("Problem Name: $name")
-    println("Problem Data: $prob")
+    println("Problem Data: $(prob_data.x0)")
     for (solver_name, solver_func) in solvers
-        println("  Solver Name: $solver_name")
-        println("  Solver Function: $solver_func")
-        if solver_name in ["LM-QR", "LM-SVD"]
-            if solver_name == "LM-QR"
-                strat = nonlinearlstr.QRSolve()
-            else # solver_name == "LM-SVD"
-                strat = nonlinearlstr.SVDSolve()
-            end
-            result = solve_non(solver_func, prob; maxiters = 400, strat = strat)
-        elseif solver_name in
-               ["NL-TrustRegion", "NL-LevenbergMarquardt", "NL-GaussNewton", "NL-PolyAlg"]
-            result = solve_nlsolve(solver_func, prob; maxiters = 400)
-        elseif solver_name in ["PRIMA-NEWUOA", "PRIMA-BOBYQA"]
-            result = solve_prima(solver_func, prob; maxiters = 400)
-        elseif solver_name == "Scipy-LeastSquares"
-            result = solve_scipy(solver_func, prob; maxiters = 400)
+        print("  Testing $solver_name... ")
+        result = test_solver_on_problem(solver_name, solver_func, prob_data, nothing, 400)
+        if result.success && result.converged
+            println("✓ obj=$(round(result.final_cost, digits=8)), iters=$(result.iterations)")
         else
-            error("Unknown solver: $solver_name")
+            status = result.success ? "no convergence" : "failed"
+            println("✗ $status")
         end
-        result = merge(result, (problem = name, solver = solver_name))
-        push!(results, result)
+        result_with_problem = merge(result, (problem = name, nvars = prob_data.n, nresiduals = prob_data.m, initial_objective = prob_data.obj_func(prob_data.x0),))
+        push!(results, result_with_problem)
     end
 end
 
@@ -308,14 +177,44 @@ include("evaluate_solver_dfs.jl")
 df_proc = compare_with_best(df)
 summary_df = evaluate_solvers(df_proc)
 display(summary_df)
-@test summary_df[summary_df[:solver] .== "LM-QR", :percentage_success][1] > 0.49
-@test summary_df[summary_df[:solver] .== "LM-SVD", :percentage_success][1] > 0.49
+using Test
+@test summary_df[summary_df[!, :solver] .== "LM-QR", :percentage_success][1] > 0.49
+@test summary_df[summary_df[!, :solver] .== "LM-SVD", :percentage_success][1] > 0.49
 fig = build_performance_plots(df_proc)
 save("../test_plots/hardluksan_nls_solver_performance.png", fig)
 
-# # investigate a bit:
-# problem = problems[end]  # A.6
-# solve_nlsolve(NonlinearSolve.LevenbergMarquardt, problem; maxiters=200)
-# solve_non(nonlinearlstr.lm_trust_region, problem; maxiters=200,
-#     strat=nonlinearlstr.SVDSolve()
-#     )
+# Repeat for log-scale variant
+problems_log = [
+    make_prob_data_from_res(x -> res(exp.(x)), x0) for (res, x0) in
+    zip([resa1, resa2, resa3, resa4, resa5, resa6], [x01, x02, x03, x04, x05, x06])
+]
+results = []
+for (name, prob_data) in zip(problem_names, problems_log)
+    println("Problem Name (log): $name")
+    println("Problem Data: $(prob_data.x0)")
+    for (solver_name, solver_func) in solvers
+        print("  Testing $solver_name... ")
+        result = test_solver_on_problem(solver_name, solver_func, prob_data, nothing, 400)
+        if result.success && result.converged
+            println("✓ obj=$(round(result.final_cost, digits=8)), iters=$(result.iterations)")
+        else
+            status = result.success ? "no convergence" : "failed"
+            println("✗ $status")
+        end
+        result_with_problem = merge(result, (problem = name, nvars = prob_data.n, nresiduals = prob_data.m, initial_objective = prob_data.obj_func(prob_data.x0),))
+        push!(results, result_with_problem)
+    end
+end
+
+df = DataFrame(results)
+
+include("evaluate_solver_dfs.jl")
+
+df_proc = compare_with_best(df)
+summary_df = evaluate_solvers(df_proc)
+display(summary_df)
+@test summary_df[summary_df[!, :solver] .== "LM-QR", :percentage_success][1] > 0.49
+@test summary_df[summary_df[!, :solver] .== "LM-SVD", :percentage_success][1] > 0.49
+fig = build_performance_plots(df_proc)
+save("../test_plots/hardluksan_nls_solver_performance_log.png", fig)
+

@@ -4,15 +4,58 @@ using NLSProblems
 using JSOSolvers
 using PRIMA
 using NonlinearSolve
-using Pkg, Revise
+using Revise
+using Test
 using DataFrames, CSV, CairoMakie
 using LeastSquaresOptim
 using LinearAlgebra, Statistics
+using NLLSsolver
+using StaticArrays
 using BenchmarkTools
 using PythonCall
+using StaticArrays
+using Static
 scipy = pyimport("scipy")
 
 using nonlinearlstr
+
+# Generic wrapper for prob_data residual
+# Parametric wrapper encodes sizes at the type level so NLLSsolver can use
+# static sizes while we still carry a runtime `prob_data` instance.
+struct ProbDataResidual{NB,M} <: NLLSsolver.AbstractResidual
+    prob_data
+end
+
+# Construct a properly-parameterized wrapper from runtime `prob_data`.
+# NB is the number of variable blocks the residual depends on (we use 1).
+ProbDataResidual(prob_data) = ProbDataResidual{1, prob_data.n}(prob_data)
+
+Base.eltype(::ProbDataResidual) = Float64
+NLLSsolver.ndeps(::ProbDataResidual{NB,M}) where {NB,M} = static(NB) # number of variable blocks
+NLLSsolver.nres(::ProbDataResidual{NB,M}) where {NB,M} = static(M)   # residual length
+NLLSsolver.varindices(::ProbDataResidual{NB,M}) where {NB,M} = SVector{NB}(1:NB)
+
+function NLLSsolver.getvars(::ProbDataResidual{NB,M}, vars::Vector) where {NB,M}
+    # Return the variable blocks this residual depends on as a tuple
+    return (vars[1],)
+end
+
+function NLLSsolver.computeresidual(res::ProbDataResidual{NB,M}, vars...) where {NB,M}
+    # `vars` may be passed as a tuple of variable blocks or explicit args
+    vb = length(vars) == 1 ? vars[1] : vars
+    x = collect(vb)
+    return SVector{M}(res.prob_data.residual_func(x))
+end
+
+# Provide an analytic residual+jacobian implementation so the solver uses it
+# rather than attempting autodiff through potentially non-Dual-friendly code.
+function NLLSsolver.computeresjacstatic(varflags::StaticInt{NB}, res::ProbDataResidual{NB,M}, vars) where {NB,M}
+    vb = isa(vars, Tuple) ? vars[1] : vars
+    x = collect(vb)
+    r = SVector{M}(res.prob_data.residual_func(x))
+    J = res.prob_data.jacobian_func(x)
+    return r, J
+end
 
 function find_cutest_nlls_problems(max_vars = 50)
     """Find CUTEst nonlinear least squares problems with obj='none' (residual form)"""
@@ -224,6 +267,18 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             g_opt = prob_data.grad_func(x_opt)
             iterations = sol.stats.nsteps
             converged = SciMLBase.successful_retcode(sol)
+        # elseif contains(solver_name, "MINPACK-")
+        #     n_res(u, p) = residual(nlp, u)
+        #     nl_jac(u, p) = Matrix(jac_residual(prob, u))
+        #     nl_func = NonlinearFunction(n_res, jac = nl_jac)
+        #     prob_nl = NonlinearLeastSquaresProblem(nl_func, prob_data.x0)
+        #     sol = solve(prob_nl, solver_func(); maxiters = max_iter)
+        #     t = @elapsed solve(prob_nl, solver_func(); maxiters = max_iter)
+        #     x_opt = sol.u
+        #     final_cost = prob_data.obj_func(x_opt)
+        #     g_opt = prob_data.grad_func(x_opt)
+        #     iterations = sol.stats.nsteps
+        #     converged = SciMLBase.successful_retcode(sol)
         elseif contains(solver_name, "JSO-")
             stats = solver_func(prob, max_iter = max_iter)
             t = @elapsed solver_func(prob, max_iter = max_iter)
@@ -235,21 +290,21 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
         elseif contains(solver_name, "LSO-")
             f_func! = (r, x) -> copyto!(r, prob_data.residual_func(x))
             J_func! = (J, x) -> copyto!(J, prob_data.jacobian_func(x))
-            res = optimize!(
+            res = LeastSquaresOptim.optimize!(
                 LeastSquaresProblem(
                     x = prob_data.x0,
                     f! = f_func!,
                     g! = J_func!,
-                    output_length = prob_data.m,
+                    output_length = prob_data.n,
                 ),
                 solver_func,
             )
-            t = @elapsed optimize!(
+            t = @elapsed LeastSquaresOptim.optimize!(
                 LeastSquaresProblem(
                     x = prob_data.x0,
                     f! = f_func!,
                     g! = J_func!,
-                    output_length = prob_data.m,
+                    output_length = prob_data.n,
                 ),
                 solver_func,
             )
@@ -285,6 +340,55 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             converged = pyconvert(Bool, pyresult.success) == true
             g_opt = prob_data.grad_func(x_opt)
             iterations = pyconvert(Int, pyresult.njev)
+        elseif solver_name == "Scipy-LSMR"
+            pyresult = scipy.optimize.least_squares(
+                prob_data.residual_func,
+                prob_data.x0,
+                jac = prob_data.jacobian_func,
+                bounds = (prob_data.bl, prob_data.bu),
+                tr_solver = "lsmr",
+                xtol = 1e-8,
+                gtol = 1e-6,
+                max_nfev = 1000,
+                verbose = 2,
+            )
+            t = @elapsed scipy.optimize.least_squares(
+                prob_data.residual_func,
+                prob_data.x0,
+                jac = prob_data.jacobian_func,
+                bounds = (prob_data.bl, prob_data.bu),
+                xtol = 1e-8,
+                gtol = 1e-6,
+                max_nfev = 1000,
+                verbose = 2,
+            )
+            x_opt = pyconvert(Vector{Float64}, pyresult.x)
+            final_cost =
+                0.5 * dot(prob_data.residual_func(x_opt), prob_data.residual_func(x_opt))
+            converged = pyconvert(Bool, pyresult.success) == true
+            g_opt = prob_data.grad_func(x_opt)
+            iterations = pyconvert(Int, pyresult.njev)
+        elseif contains(solver_name, "NLLSsolver-")
+            # Build and populate the NLLSsolver problem in one block to avoid
+            # REPL/display trying to summarize an empty problem (which triggers
+            # reductions over empty collections inside NLLSsolver.show).
+            res_obj = ProbDataResidual(prob_data)
+            # create concrete types from runtime sizes
+            var_type = typeof(NLLSsolver.EuclideanVector(prob_data.x0...))
+            res_type = ProbDataResidual{1, prob_data.n}
+            problem = let p = NLLSsolver.NLLSProblem(var_type, res_type)
+                    NLLSsolver.addvariable!(p, NLLSsolver.EuclideanVector(prob_data.x0...))
+                    NLLSsolver.addcost!(p, res_obj)
+                    p
+                end
+            options = NLLSsolver.NLLSOptions(reldcost=1e-11, iterator=solver_func, maxiters=max_iter)
+            result = NLLSsolver.optimize!(problem, options)
+            t = @elapsed NLLSsolver.optimize!(problem, options)
+            x_opt = collect(problem.variables[1])
+            final_cost = prob_data.obj_func(x_opt)
+            g_opt = prob_data.grad_func(x_opt)
+            iterations = result.niterations
+            converged = result.termination > 0
         else
             error("Unknown solver: solver_name")
         end

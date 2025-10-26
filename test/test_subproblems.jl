@@ -37,7 +37,7 @@ using nonlinearlstr
 
             @test cache.scaling_matrix == I(n)
             @test typeof(cache.factorization) <:
-                  Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY}
+                  Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY, LinearAlgebra.QRPivoted}
         end
 
         @testset "SVD Cache" begin

@@ -88,7 +88,7 @@ jobs:
           echo "Using python: $PY"
           export PYTHON="$PY"
           julia --project=test -e 'using Pkg; Pkg.build("PythonCall")'
-          julia --project=test -e 'using Pkg; Pkg.test()'
+          julia --project=test -e 'using Pkg; Pkg.test(path=pwd())'
 
       # Windows runner: use the Scripts/python.exe path
       - name: Build PythonCall and run tests (windows)
@@ -98,8 +98,7 @@ jobs:
           $PY = "${{ github.workspace }}\test\.CondaPkg\.pixi\envs\default\Scripts\python.exe"
           Write-Host "Using python: $PY"
           $env:PYTHON = $PY
-          julia --project=test -e 'using Pkg; Pkg.build("PythonCall")'
-          julia --project=test -e 'using Pkg; Pkg.test()'
+          julia --project=test -e "using Pkg; Pkg.build(\"PythonCall\"); Pkg.test(path=pwd())"
 
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5

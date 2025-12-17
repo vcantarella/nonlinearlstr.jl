@@ -21,7 +21,7 @@ function find_λ_scaled_b(Δ, J, A, D, f, maxiters, θ = 1e-4)
         else
             lₖ = max(lₖ, λ)
         end
-        dpdλ = solve_for_dp_dlambda_scaled(::QRSolve, qrf, p, D)
+        dpdλ = solve_for_dp_dlambda_scaled(QRSolve(), qrf, p, D)
         λ = λ - (norm(D*p)-Δ)/Δ*((D*p)'*(D*p)/(p'*D*(D*dpdλ)))
         if !(lₖ < λ < uₖ)
             λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))

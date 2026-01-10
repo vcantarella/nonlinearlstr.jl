@@ -1,7 +1,8 @@
 abstract type ScalingStrategy end
+abstract type BoundedScalingStrategy end
 struct NoScaling <: ScalingStrategy end
 struct JacobianScaling <: ScalingStrategy end
-struct ColemanandLiScaling <: ScalingStrategy end
+struct ColemanandLiScaling <: BoundedScalingStrategy end
 
 function scaling(::NoScaling, J::AbstractMatrix; kwargs...)
     return I(size(J, 2))
@@ -15,4 +16,27 @@ function scaling(::JacobianScaling, J; τ = 1e-12, kwargs...)
         Dk[i, i] = max(τ, column_norms[i])
     end
     return Dk
+end
+
+function scaling(::ColemanandLiScaling, J; x, lb, ub, g, τ=1e-16)
+    v = ones(length(x))
+    jᵥ = zeros(length(x))
+    for i in eachindex(x)
+        if (g[i] < 0) & (ub[i] < Inf)
+            v[i] = x[i] - ub[i]
+            jᵥ[i] = sign(g[i])
+        elseif (g[i] ≥ 0) & (lb[i] > -Inf)
+            v[i] = x[i] - lb[i]
+            jᵥ[i] = sign(g[i])
+        elseif g[i] < 0 #ui = Infs
+            v[i] = -1
+            jᵥ[i] = 0
+        else # g[i] > 0  & li = -Inf
+            v[i] = 1
+            jᵥ[i] = 0
+        end
+    end
+    D = Diagonal(diagm(1 ./ sqrt.(abs.(v) .+ τ)))
+    Jᵥ = Diagonal(diagm(g)) * Diagonal(diagm(jᵥ))
+    return D, Jᵥ, v
 end

@@ -88,6 +88,7 @@ mutable struct SubproblemCache{S<:SubProblemStrategy,F,D}
     end
 end
 
+
 """
     solve_subproblem(strategy::SubProblemStrategy, J::AbstractMatrix{T}, f::AbstractVector{T}, radius::Real, cache) where {T<:Real}
 
@@ -376,3 +377,52 @@ function solve_for_dp_dlambda_scaled(
     end
     return dpdλ
 end
+
+# function find_λ_scaled_b(strategy::QRSolve,
+#     scaling_strategy::ScalingStrategy, # Corrected type
+#     Δ, J, A, D, f, maxiters, θ = 1e-4)
+#     l₀ = 0.0
+#     u₀ = norm(D*J'f)/Δ
+#     n = size(J, 2)
+#     λ₀ = max(1e-3*u₀, √(l₀*u₀))
+#     λ = λ₀
+#     uₖ = u₀
+#     lₖ = l₀
+#     p = zeros(n)
+#     b_aug = [-f; zeros(n)]
+#     for i = 1:maxiters
+#         # The system is (JᵀJ + Dᵀ(λI + A)D)p = -Jᵀf
+#         sqrt_scale = sqrt.(max.(0, λ .+ diag(A))) # Ensure non-negative before sqrt
+#         aug_scale = Diagonal(sqrt_scale) * D
+#         qrf = qr([J; aug_scale], ColumnNorm()) # Use pivoted QR for stability
+        
+#         p = qrf \ b_aug
+        
+#         norm_Dp = norm(D*p)
+#         if (1-θ)*Δ < norm_Dp < (1+θ)*Δ
+#             break
+#         end
+        
+#         ϕ = norm_Dp - Δ
+#         if ϕ < 0
+#             uₖ = λ
+#         else
+#             lₖ = max(lₖ, λ)
+#         end
+        
+#         dpdλ = solve_for_dp_dlambda_scaled(strategy, qrf, p, D)
+        
+#         denom = (p' * D' * (D * dpdλ))
+#         if abs(denom) < 1e-12
+#              λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))
+#         else
+#             λ = λ - (norm_Dp - Δ) / Δ * ( (norm_Dp^2) / denom )
+#         end
+
+#         if !(lₖ < λ < uₖ)
+#             λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))
+#         end
+#     end
+#     # println("Final step norm: ", norm(D*p))
+#     return λ, p
+# end

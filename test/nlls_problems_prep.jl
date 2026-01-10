@@ -107,6 +107,37 @@ function find_nlls_problems(max_vars = 50)
     return valid_problems
 end
 
+function find_bounded_problems(max_vars = Inf)
+    """Find bounded NLS problems from NLSProblems.jl package"""
+    # Get all available NLS problems
+    all_problems = setdiff(names(NLSProblems), [:NLSProblems])
+
+    valid_problems = []
+
+    for prob_name in all_problems
+        prob = eval(prob_name)()
+
+        # Filter by size and check if it's a valid NLS problem
+        if !bound_constrained(prob)
+            # println("  Problem $prob_name is not bound constrained, skipping")
+            finalize(prob)
+            continue
+        elseif prob.meta.nvar <= max_vars
+            isa(prob, AbstractNLSModel)
+
+            push!(valid_problems, prob_name)
+            finalize(prob)
+        else
+            finalize(prob)
+        end
+    end
+
+    println(
+        "Found $(length(valid_problems)) valid bounded NLS problems (≤ $max_vars variables)",
+    )
+    return valid_problems
+end
+
 function create_cutest_functions(nlp)
     """Create Julia function wrappers for CUTEst NLLS problem"""
     # Get problem info
@@ -135,12 +166,13 @@ function create_cutest_functions(nlp)
         x0 = x0,
         bl = bl,
         bu = bu,
+        initial_cost = obj_func(x0),
         residual_func = residual_func,
         jacobian_func = jacobian_func,
         obj_func = obj_func,
         grad_func = grad_func,
         hess_func = hess_func,
-        problem = prob.meta.name,
+        problem = nlp.meta.name,
     )
 end
 
@@ -225,6 +257,37 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             x_opt, r_opt, g_opt, iterations = result
             final_cost = 0.5 * dot(r_opt, r_opt)
             converged = norm(g_opt, 2) < 1e-6
+        elseif solver_name in ["TRF", "TRF-scaled"]
+            scaling_strategy = nonlinearlstr.ColemanandLiScaling()
+           
+           result = solver_func(
+               prob_data.residual_func,
+               prob_data.jacobian_func,
+               prob_data.x0,
+               nonlinearlstr.QRSolve(),
+               scaling_strategy;
+               lb = prob_data.bl,
+               ub = prob_data.bu,
+               max_iter = max_iter,
+               gtol = 1e-6,
+           )
+           #run one more time for timing:
+
+           t = @elapsed solver_func(
+               prob_data.residual_func,
+               prob_data.jacobian_func,
+               prob_data.x0,
+               nonlinearlstr.QRSolve(),
+               scaling_strategy;
+               lb = prob_data.bl,
+               ub = prob_data.bu,
+               max_iter = max_iter,
+               gtol = 1e-6,
+           )
+
+           x_opt, r_opt, g_opt, iterations = result
+           final_cost = 0.5 * dot(r_opt, r_opt)
+           converged = norm(g_opt, 2) < 1e-6
         elseif solver_name in ["PRIMA-NEWUOA", "PRIMA-BOBYQA"]
             # Use objective-only interface
             if solver_name == "PRIMA-NEWUOA"

@@ -9,4 +9,5 @@ using Test
     include("test_subproblems.jl")
     include("hard_luksan_problems.jl")
     include("problem_testing.jl")
+    include("bounded_tests.jl")
 end

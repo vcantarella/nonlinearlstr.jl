@@ -80,7 +80,6 @@ function lm_trust_region(
                 println("Function tolerance criterion reached")
                 return x, f, g, iter
             end
-
             # update cache
             cache.factorization = factorize(subproblem_strategy, J)
             cache.scaling_matrix = scaling(scaling_strategy, J)

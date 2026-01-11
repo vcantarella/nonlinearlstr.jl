@@ -48,6 +48,16 @@ using nonlinearlstr
             @test cache.scaling_matrix == I(n)
             @test typeof(cache.factorization) <: LinearAlgebra.SVD
         end
+
+        @testset "QRrecursive Cache" begin
+            strat = nonlinearlstr.QRrecursiveSolve()
+            scaling = nonlinearlstr.NoScaling()
+            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
+
+            @test cache.scaling_matrix == I(n)
+            @test typeof(cache.factorization) <:
+                  Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY, LinearAlgebra.QRPivoted}
+        end
     end
 
     @testset "Low-level Solving Functions" begin
@@ -87,6 +97,36 @@ using nonlinearlstr
 
             @test dp_dλ_svd ≈ dp_dλ_fd atol=1e-6
         end
+
+        @testset "Derivative dp/dλ - QRrecursive Method" begin
+            strat = nonlinearlstr.QRrecursiveSolve()
+            F = qr(J, ColumnNorm())
+            Dk = I(n)
+            # 1. Extract Permutation and Caches
+            perm = hasproperty(F, :p) ? F.p : (1:n)
+            
+            p = zeros(n)
+            R_buffer = copy(F.R)
+            # Precompute Q' * f. 
+            # The RHS for the system R*y = ... is -Q'*f
+            QTr_orig = F.Q' * f
+            rhs_orig = -QTr_orig
+            rhs_buffer = copy(rhs_orig)
+            
+            # We need a workspace vector for the update. 
+            # Ideally passed in cache, here we allocate if not available or assume safety.
+            # For this snippet, I will allocate one locally to be safe.
+            v_row = zeros(n)
+            p = nonlinearlstr.solve_damped_system_recursive!(p, R_buffer, rhs_buffer, F.R, rhs_orig, λ, n, Dk, perm, v_row)
+
+            # Analytical derivative
+            dpdλ = nonlinearlstr.solve_for_dp_dlambda_scaled(strat, R_buffer, p, Dk, perm)
+
+            # Finite difference reference
+            dp_dλ_fd = ForwardDiff.derivative(λ -> get_p(J, f, λ), λ)
+
+            @test dpdλ ≈ dp_dλ_fd atol=1e-6
+        end
     end
 
     @testset "Trust Region Subproblem Solver" begin
@@ -112,6 +152,18 @@ using nonlinearlstr
             @test abs(λ_svd - λ) < 1e-3
             @test norm(δ_svd) ≈ size_p atol=1e-3
             @test δ_svd ≈ p_ref atol=1e-3
+        end
+
+        @testset "QR-recursivebased Solver" begin
+            strat = nonlinearlstr.QRrecursiveSolve()
+            scaling = nonlinearlstr.NoScaling()
+            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
+
+            λ_qr, δ_qr = nonlinearlstr.solve_subproblem(strat, J, f, size_p, cache)
+
+            @test abs(λ_qr - λ) < 1e-3
+            @test norm(δ_qr) ≈ size_p atol=1e-3
+            @test δ_qr ≈ p_ref atol=1e-3
         end
 
         @testset "Method Consistency" begin

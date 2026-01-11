@@ -1,14 +1,20 @@
 using Revise
 using LinearAlgebra
 using Test
-include("../src/colemanli.jl")
+using nonlinearlstr
 
 # Test the zero matrix for infinite bounds:
 n = 10
 x = randn(n)
+J = randn(12,n)
 lb = fill(-Inf, n)
 ub = fill(Inf, n)
 g = randn(n)
-D, Jv = affine_scale_matrix(x, lb, ub, g)
-@test D == I(n)
-@test Jv == zeros(n, n)
+@testset "Bounded Scaling" begin
+    @testset "Coleman & Li Scaling" begin
+        strat = nonlinearlstr.ColemanandLiScaling()
+        D, Jv, v = nonlinearlstr.scaling(strat, J; x, lb, ub, g, τ=1e-16)
+        @test D == I(n)
+        @test Jv == zeros(n, n)
+    end    
+end

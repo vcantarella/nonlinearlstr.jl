@@ -1,64 +1,80 @@
 abstract type BoundedSubproblemCache end
-mutable struct ColemandandLiCache{S<:SubProblemStrategy,F,D,JV,V} <: BoundedSubproblemCache
+
+mutable struct ColemanandLiCache{S<:SubProblemStrategy,F,D,JV,V,Vec,Mat} <: BoundedSubproblemCache
     factorization::F
     scaling_matrix::D
     Jv::JV
     v::V
+    # Workspaces (matching SubproblemCache)
+    p::Vec
+    p_tmp::Vec
+    b_aug::Vec
+    J_aug::Mat
+    # For Recursive Solver
+    R_buffer::Mat
+    rhs_buffer::Vec
+    v_row::Vec
+    rhs_orig::Vec
+
     ColemanandLiCache(
         strategy::S,
         scaling_strat::Sc,
-        J::AbstractMatrix;
+        J::AbstractMatrix{T};
         kwargs...,
-    ) where {S<:SubProblemStrategy, Sc<:BoundedScalingStrategy} = begin
+    ) where {S<:SubProblemStrategy, Sc<:BoundedScalingStrategy, T} = begin
+        m, n = size(J)
         F = factorize(strategy, J)
-        Dk, A, v = scaling(scaling_strat, J; kwargs)
-        new{S,typeof(F),typeof(Dk), typeof(A), typeof(v)}(F, Dk, A, v)
+        Dk, A, v = scaling(scaling_strat, J; kwargs...)
+        
+        # Initialize workspaces
+        p = zeros(T, n)
+        p_tmp = zeros(T, n)
+        
+        J_aug = zeros(T, m + n, n)
+        b_aug = zeros(T, m + n)
+        
+        R_buffer = zeros(T, n, n)
+        rhs_buffer = zeros(T, n)
+        v_row = zeros(T, n)
+        rhs_orig = zeros(T, n)
+
+        new{S,typeof(F),typeof(Dk), typeof(A), typeof(v), Vector{T}, Matrix{T}}(
+            F, Dk, A, v, p, p_tmp, b_aug, J_aug, R_buffer, rhs_buffer, v_row, rhs_orig
+        )
     end
 end
 
 
 """
-    solve_subproblem(strategy::SubProblemStrategy, J::AbstractMatrix{T}, f::AbstractVector{T}, radius::Real, cache) where {T<:Real}
+    solve_subproblem(strategy::SubProblemStrategy, J, f, radius, cache::ColemanandLiCache)
 
-Solve the trust region subproblem to find the optimal step direction and Lagrange multiplier.
-
-The subproblem being solved is:
-    min_{δ} ½‖f + J*δ‖² subject to ‖D*δ‖ ≤ radius
-
-where D is the scaling matrix from the cache.
-
-# Arguments
-- `strategy`: Subproblem solving strategy (QRSolve or SVDSolve)
-- `J`: Jacobian matrix of the residual function
-- `f`: Current residual vector
-- `radius`: Trust region radius constraint
-- `cache`: SubproblemCache containing factorization and scaling information
-
-# Returns
-- `λ`: Lagrange multiplier for the trust region constraint
-- `δ`: Optimal step direction satisfying the trust region constraint
-
-# Algorithm
-If the Gauss-Newton step ‖δ_gn‖ ≤ radius, then λ = 0 and δ = δ_gn.
-Otherwise, finds λ > 0 such that ‖D*δ‖ = radius using iterative methods.
+Solve the trust region subproblem for bounded problems.
 """
 function solve_subproblem(
     strategy::SubProblemStrategy,
     J::AbstractMatrix{T},
     f::AbstractVector{T},
     radius::Real,
-    cache::ColemandandLiCache,
+    cache::ColemanandLiCache,
 ) where {T<:Real}
     F = cache.factorization
     Dk = cache.scaling_matrix
     A = cache.Jv
-    δgn = F \ -f
+    
+    # We can use cache.p to store δgn initially
+    δgn = F \ -f # Allocating for now
+    
     if norm(δgn) <= radius
         λ = zero(T)
         δ = δgn
     else
-        D = √A*Dk
-        λ, δ = find_λ_scaled(strategy, F, radius, J, D, f, 200, 1e-6)
+        D = √A * Dk # This allocates a new diagonal matrix?
+        # A and Dk are diagonal.
+        # Ideally we'd compute this lazily or in a buffer.
+        # But find_λ_scaled takes D.
+        # Let's keep it allocating for now or optimize later.
+        
+        λ, δ = find_λ_scaled(strategy, F, radius, J, D, f, cache, 200, 1e-6)
     end
     return λ, δ
 end

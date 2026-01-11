@@ -1,4 +1,5 @@
-function bounded_step(::ColemanandLiScaling, δ, lb, ub, Dk, A, J, g)
+function bounded_step(::ColemanandLiScaling, δ, lb, ub, Dk, A, J, g, x, radius)
+    n = length(x)
     # 1. Define the trial step and step-back factor
     pₖ = δ
     Θ = 0.995
@@ -121,6 +122,9 @@ function bounded_step(::ColemanandLiScaling, δ, lb, ub, Dk, A, J, g)
         end
         # --- END REFLECTIVE STEP ---
         # 1. Define the scaled gradient direction
+        # v corresponds to components of Dk^(-2).
+        # Assuming Dk is Diagonal.
+        v = 1 ./ (Dk.diag .^ 2)
         dg = - v .* g # same as: Dk^(-2) * g
         # 2. Calculate the optimal UNCONSTRAINED step length along d_grad
         # The correct formula is τ = - (g'd) / (d' M d)

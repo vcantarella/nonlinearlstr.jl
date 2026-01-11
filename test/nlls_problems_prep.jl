@@ -12,6 +12,7 @@ using LinearAlgebra, Statistics
 using NLLSsolver
 using StaticArrays
 using BenchmarkTools
+using CondaPkg
 using PythonCall
 using StaticArrays
 using Static
@@ -220,14 +221,16 @@ end
 function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_iter = 100)
     """Test a single solver on a problem"""
     try
-        if solver_name in ["LM-QR", "LM-QR-scaled", "LM-SVD"]
+        if solver_name in ["LM-QR", "LM-QR-scaled", "LM-SVD", "LM-QR-Recursive", "LM-QR-Recursive-Scaled", "LM-QR-Scaled"]
             # Use residual-Jacobian interface
-            if contains(solver_name, "scaled")
+            if contains(solver_name, "scaled") || contains(solver_name, "Scaled")
                 scaling_strategy = nonlinearlstr.JacobianScaling()
             else
                 scaling_strategy = nonlinearlstr.NoScaling()
             end
-            if contains(solver_name, "QR")
+            if contains(solver_name, "Recursive")
+                subproblem_strategy = nonlinearlstr.QRrecursiveSolve()
+            elseif contains(solver_name, "QR")
                 subproblem_strategy = nonlinearlstr.QRSolve()
             else # contains(solver_name, "SVD")
                 subproblem_strategy = nonlinearlstr.SVDSolve()
@@ -397,12 +400,14 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 max_nfev = 1000,
                 verbose = 2,
             )
-            x_opt = pyconvert(Vector{Float64}, pyresult.x)
+            x_opt = pyconvert(Vector{Float64}, pyresult["x"])
             final_cost =
                 0.5 * dot(prob_data.residual_func(x_opt), prob_data.residual_func(x_opt))
-            converged = pyconvert(Bool, pyresult.success) == true
+            converged = pyconvert(Bool, pyresult["success"])
             g_opt = prob_data.grad_func(x_opt)
-            iterations = pyconvert(Int, pyresult.njev)
+            iterations = pyconvert(Int, pyresult["njev"])
+            pyresult = nothing
+            GC.gc()
         elseif solver_name == "Scipy-LSMR"
             pyresult = scipy.optimize.least_squares(
                 prob_data.residual_func,
@@ -425,12 +430,14 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 max_nfev = 1000,
                 verbose = 2,
             )
-            x_opt = pyconvert(Vector{Float64}, pyresult.x)
+            x_opt = pyconvert(Vector{Float64}, pyresult["x"])
             final_cost =
                 0.5 * dot(prob_data.residual_func(x_opt), prob_data.residual_func(x_opt))
-            converged = pyconvert(Bool, pyresult.success) == true
+            converged = pyconvert(Bool, pyresult["success"])
             g_opt = prob_data.grad_func(x_opt)
-            iterations = pyconvert(Int, pyresult.njev)
+            iterations = pyconvert(Int, pyresult["njev"])
+            pyresult = nothing
+            GC.gc()
         elseif contains(solver_name, "NLLSsolver-")
             # Build and populate the NLLSsolver problem in one block to avoid
             # REPL/display trying to summarize an empty problem (which triggers
@@ -456,6 +463,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             error("Unknown solver: solver_name")
         end
 
+        bounds_satisfied = all(prob_data.bl .<= x_opt .<= prob_data.bu)
+
         return (
             solver = solver_name,
             success = true,
@@ -463,6 +472,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             final_cost = final_cost,
             iterations = iterations,
             time = t,
+            bounds_satisfied = bounds_satisfied,
             final_gradient_norm = norm(g_opt, 2),
             x_opt = x_opt,
         )

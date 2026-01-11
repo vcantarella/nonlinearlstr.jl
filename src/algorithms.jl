@@ -20,8 +20,10 @@ function lm_trust_region(
 
     # Initialize
     x = copy(x0)
+    x_trial = copy(x0) # Buffer for candidate step
     f = res(x)
     J = jac(x)
+    Jδ = Vector{T}(undef, length(f))
     cost = 0.5 * dot(f, f)
     g = J' * f
     cache = SubproblemCache(subproblem_strategy, scaling_strategy, J)
@@ -39,13 +41,13 @@ function lm_trust_region(
         # Compute step using QR-facorization
         λ, δ = solve_subproblem(subproblem_strategy, J, f, radius, cache)
         # Evaluate new point
-        x_new = x + δ
+        @. x_trial = x + δ
         f_new = res(x_new)
         cost_new = 0.5 * dot(f_new, f_new)
         # Compute reduction ratio
         actual_reduction = cost - cost_new
         # Predicted reduction using QR factorization
-        Jδ = J * δ
+        mul!(Jδ, J, δ)
         #predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
         predicted_reduction = 0.5*dot(Jδ, Jδ)+λ*dot(δ, δ)
         if predicted_reduction <= 0 #this potentially means the δ is wrong but we leave some margin
@@ -63,11 +65,11 @@ function lm_trust_region(
         end
         # Accept or reject step
         if ρ >= step_threshold
-            x = x_new
-            f = f_new
+            @. x = x_trial
+            @. f = f_new
             cost = cost_new
             J = jac(x)
-            g = J' * f
+            mul!(g, J', f)
             println(
                 "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
             )
@@ -81,8 +83,12 @@ function lm_trust_region(
                 return x, f, g, iter
             end
             # update cache
-            cache.factorization = factorize(subproblem_strategy, J)
-            cache.scaling_matrix = scaling(scaling_strategy, J)
+            factorize!(cache, subproblem_strategy, J)
+            cache.scaling_matrix .= scaling(scaling_strategy, J)
+            # To verify allocations reduced, check cache.J_buffer
+            if cache.J_buffer === nothing
+                @warn "Optimized path NOT taken: J is $(typeof(J))"
+            end
         else
             println("Step rejected, ρ = $ρ")
         end

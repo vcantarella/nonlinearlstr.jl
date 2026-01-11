@@ -1,5 +1,5 @@
 abstract type ScalingStrategy end
-abstract type BoundedScalingStrategy end
+abstract type BoundedScalingStrategy <: ScalingStrategy end
 struct NoScaling <: ScalingStrategy end
 struct JacobianScaling <: ScalingStrategy end
 struct ColemanandLiScaling <: BoundedScalingStrategy end
@@ -36,7 +36,7 @@ function scaling(::ColemanandLiScaling, J; x, lb, ub, g, τ=1e-16)
             jᵥ[i] = 0
         end
     end
-    D = Diagonal(diagm(1 ./ sqrt.(abs.(v) .+ τ)))
-    Jᵥ = Diagonal(diagm(g)) * Diagonal(diagm(jᵥ))
+    D = Diagonal(1 ./ sqrt.(abs.(v) .+ τ))
+    Jᵥ = Diagonal(g) * Diagonal(jᵥ)
     return D, Jᵥ, v
 end

@@ -95,7 +95,11 @@ function lm_trust_region_reflective(
     # check x0 is within bounds and restrict it to bounds
     #x = clamp.(x, lb, ub)
     m, n = size(J)
-    cache = SubproblemCache(subproblem_strategy, scaling_strategy, J; x, lb, ub, g)
+    if isa(scaling_strategy, ColemanandLiScaling)
+        cache = ColemanandLiCache(subproblem_strategy, scaling_strategy, J; x=x, lb=lb, ub=ub, g=g)
+    else
+        cache = SubproblemCache(subproblem_strategy, scaling_strategy, J; x=x, lb=lb, ub=ub, g=g)
+    end
     # Dk, A, v = affine_scale_matrix(x, lb, ub, g)
     Dk = cache.scaling_matrix
     A = cache.Jv
@@ -120,7 +124,7 @@ function lm_trust_region_reflective(
         #     # step on the boundary using the standard LM approach.
         #     λ, δ = find_λ_scaled_b(radius, J, A, Dk, f, 100)
         # end
-        δ, Ψ = bounded_step(scaling_strategy, δ, lb, ub, Dk, A, J, g)
+        δ, Ψ = bounded_step(scaling_strategy, δ, lb, ub, Dk, A, J, g, x, radius)
 
         # Evaluate new point
         x_new = x + δ

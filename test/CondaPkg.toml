@@ -1,3 +1,3 @@
-
-[pip.deps]
-pycutest = ""
+[deps]
+python = "=3.12"
+scipy = ""

@@ -9,6 +9,9 @@ using LinearAlgebra, Statistics
 using nonlinearlstr
 using BenchmarkTools
 using PythonCall
+scipy_opt = pyimport("scipy.optimize")
+using LinearAlgebra
+using NLPModels
 using Test
 
 scipy = pyimport("scipy")

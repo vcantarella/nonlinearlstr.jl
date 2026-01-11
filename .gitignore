@@ -3,3 +3,4 @@
 .CondaPkg/
 .vscode/
 test_env/
+venv/

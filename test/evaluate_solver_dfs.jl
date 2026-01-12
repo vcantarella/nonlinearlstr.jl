@@ -1,5 +1,4 @@
 using DataFrames
-using Tidier
 using CairoMakie
 
 function compare_with_best(df::DataFrame)

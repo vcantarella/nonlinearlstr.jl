@@ -2,7 +2,6 @@ include("nlls_problems_prep.jl")
 using NLPModels
 using JSOSolvers
 using PRIMA
-using MINPACK
 using NonlinearSolve
 using Revise
 using DataFrames

@@ -12,6 +12,6 @@ CondaPkg.add("scipy")
     include("test_subproblems.jl")
     include("test_colemanli.jl")
     # include("hard_luksan_problems.jl")
-    # include("problem_testing.jl")
+    include("problem_testing_simp.jl")
     # include("bounded_tests.jl")
 end

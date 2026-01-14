@@ -144,7 +144,11 @@ function lm_trust_region_reflective(
                 cost = cost_new
                 J .= jac(x)
                 g .= J' * f
-                cache = SubproblemCache(subproblem_strategy, scaling_strategy, J; x, lb, ub, g)
+                if isa(scaling_strategy, ColemanandLiScaling)
+                    cache = ColemanandLiCache(subproblem_strategy, scaling_strategy, J; x=x, lb=lb, ub=ub, g=g)
+                else
+                    cache = SubproblemCache(subproblem_strategy, scaling_strategy, J; x=x, lb=lb, ub=ub, g=g)
+                end
                 println(
                     "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
                 )
@@ -164,7 +168,7 @@ function lm_trust_region_reflective(
             else
                 println("Step rejected, ρᶠ = $ρᶠ")
             end
-            if (ρᶠ < shrink_threshold)
+            if (ρᶠ < shrink_threshold) || isnan(ρᶠ)
                 radius *= shrink_factor
             end
         end

@@ -74,7 +74,7 @@ function solve_subproblem(
         # But find_λ_scaled takes D.
         # Let's keep it allocating for now or optimize later.
         
-        λ, δ = find_λ_scaled(strategy, F, radius, J, D, f, cache, 200, 1e-6)
+        λ, δ = find_λ_scaled(strategy, cache, radius, J, D, f, 200, 1e-6)
     end
     return λ, δ
 end

@@ -1,5 +1,7 @@
 include("nlls_problems_prep.jl")
+include("custom_bounded_problems.jl")
 using NLPModels
+using ADNLPModels
 using JSOSolvers
 using PRIMA
 using NonlinearSolve
@@ -10,7 +12,8 @@ using Test
 
 # 1. Find and prepare problems
 nls_problems = find_bounded_problems(100)  # Limit size for testing
-
+custom_problems = [:KowalikOsborne, :Meyer, :Osborne1, :BoxBOD, :AlphaPinene]
+append!(nls_problems, custom_problems)
 # 2. Define solvers
 solvers = [
     ("TRF", nonlinearlstr.lm_trust_region_reflective),

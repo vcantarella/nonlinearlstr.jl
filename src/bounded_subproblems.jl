@@ -64,7 +64,7 @@ function solve_subproblem(
     # We can use cache.p to store δgn initially
     δgn = F \ -f # Allocating for now
     
-    if norm(δgn) <= radius
+    if norm(Dk*δgn) <= radius
         λ = zero(T)
         δ = δgn
     else

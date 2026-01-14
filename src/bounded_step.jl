@@ -99,7 +99,6 @@ function bounded_step(::ColemanandLiScaling, δ, lb, ub, Dk, A, J, g, x, radius)
                 if τ_part2 > τ_part2max
                     τ_part2 = τ_part2max
                 else
-                    τ_part2 <= 0
                     τ_part2 = 0
                 end
             else
@@ -138,7 +137,7 @@ function bounded_step(::ColemanandLiScaling, δ, lb, ub, Dk, A, J, g, x, radius)
 
         # 3. Calculate the step length to the TRUST REGION boundary
         norm_Dk_dg = norm(Dk * dg)
-        τ_tr = Inf #radius / norm_Dk_dg
+        τ_tr = radius / norm_Dk_dg #Inf
 
         # 4. Calculate the step length to the PHYSICAL boundary
         α_boundary_grad = Inf

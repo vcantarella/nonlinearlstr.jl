@@ -149,6 +149,8 @@ function lm_trust_region_reflective(
                 else
                     cache = SubproblemCache(subproblem_strategy, scaling_strategy, J; x=x, lb=lb, ub=ub, g=g)
                 end
+                Dk = cache.scaling_matrix 
+                A = cache.Jv
                 println(
                     "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
                 )

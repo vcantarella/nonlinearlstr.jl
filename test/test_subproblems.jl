@@ -112,16 +112,17 @@ using nonlinearlstr
             QTr_orig = F.Q' * f
             rhs_orig = -QTr_orig
             rhs_buffer = copy(rhs_orig)
+            perm_buffer = copy(p) 
+            dpdλ = copy(p)
             
             # We need a workspace vector for the update. 
             # Ideally passed in cache, here we allocate if not available or assume safety.
             # For this snippet, I will allocate one locally to be safe.
             v_row = zeros(n)
-            p = nonlinearlstr.solve_damped_system_recursive!(p, R_buffer, rhs_buffer, F.R, rhs_orig, λ, n, Dk, perm, v_row)
+            nonlinearlstr.solve_damped_system_recursive_inplace!(p, R_buffer, rhs_buffer, λ, n, Dk, perm, v_row)
 
             # Analytical derivative
-            dpdλ = nonlinearlstr.solve_for_dp_dlambda_scaled(strat, R_buffer, p, Dk, perm)
-
+            nonlinearlstr.solve_for_dp_dlambda_scaled!(dpdλ, R_buffer, p, Dk, perm, perm_buffer)
             # Finite difference reference
             dp_dλ_fd = ForwardDiff.derivative(λ -> get_p(J, f, λ), λ)
 

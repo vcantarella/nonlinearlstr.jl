@@ -388,7 +388,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 xtol = 1e-8,
                 gtol = 1e-6,
                 max_nfev = 1000,
-                verbose = 2,
+                verbose = 0,
             )
             t = @elapsed scipy.optimize.least_squares(
                 prob_data.residual_func,
@@ -398,7 +398,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 xtol = 1e-8,
                 gtol = 1e-6,
                 max_nfev = 1000,
-                verbose = 2,
+                verbose = 0,
             )
             x_opt = pyconvert(Vector{Float64}, pyresult["x"])
             final_cost =
@@ -418,7 +418,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 xtol = 1e-8,
                 gtol = 1e-6,
                 max_nfev = 1000,
-                verbose = 2,
+                verbose = 0,
             )
             t = @elapsed scipy.optimize.least_squares(
                 prob_data.residual_func,
@@ -428,7 +428,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 xtol = 1e-8,
                 gtol = 1e-6,
                 max_nfev = 1000,
-                verbose = 2,
+                verbose = 0,
             )
             x_opt = pyconvert(Vector{Float64}, pyresult["x"])
             final_cost =

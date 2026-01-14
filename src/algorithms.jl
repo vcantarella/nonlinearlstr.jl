@@ -42,7 +42,7 @@ function lm_trust_region(
         λ, δ = solve_subproblem(subproblem_strategy, J, f, radius, cache)
         # Evaluate new point
         @. x_trial = x + δ
-        f_new = res(x_new)
+        f_new = res(x_trial)
         cost_new = 0.5 * dot(f_new, f_new)
         # Compute reduction ratio
         actual_reduction = cost - cost_new

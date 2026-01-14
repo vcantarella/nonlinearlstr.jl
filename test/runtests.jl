@@ -2,8 +2,8 @@ using nonlinearlstr
 using Test
 using PythonCall
 using CondaPkg
-CondaPkg.add("numpy")
-CondaPkg.add("scipy")
+# CondaPkg.add("numpy")
+# CondaPkg.add("scipy")
 
 @testset "nonlinearlstr.jl" begin
     include("jet_tests.jl")

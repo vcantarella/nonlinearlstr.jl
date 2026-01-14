@@ -42,6 +42,7 @@ fi
 # Install dependencies
 echo "Installing dependencies..."
 pip install --upgrade pip
+pip install numpy
 pip install scipy
 
 echo "Setup complete."

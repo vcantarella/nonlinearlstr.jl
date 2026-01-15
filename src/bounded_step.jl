@@ -27,7 +27,7 @@ function bounded_step(::ColemanandLiScaling, δ, lb, ub, Dk, A, J, g, x, radius)
     end
 
     Cₖ = Dk * A * Dk
-    Mₖ = J'J #+ Cₖ #This is the quadratic element in Coleman and Li
+    Mₖ = J'J + Cₖ #This is the quadratic element in Coleman and Li
 
     if α_boundary > 1.0
         δ = pₖ*0.995
@@ -67,7 +67,7 @@ function bounded_step(::ColemanandLiScaling, δ, lb, ub, Dk, A, J, g, x, radius)
             #    The total step will be `s_boundary + s_part2`
 
             # The remaining trust region radius for the second part of the step
-            radius_remaining = radius - norm(Dk * p_refl)
+            radius_remaining = radius - norm(Dk * s_boundary)
             if radius_remaining < 0
                 radius_remaining = 0.0
             end

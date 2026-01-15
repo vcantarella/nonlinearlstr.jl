@@ -128,6 +128,7 @@ function lm_trust_region_reflective(
 
         # Evaluate new point
         x_new = x + δ
+        x_new .= clamp.(x_new, lb, ub)
         f_new = res(x_new)
         cost_new = 0.5 * dot(f_new, f_new)
         numerator = cost_new - cost #+ 1/2*δ'*Cₖ*δ
@@ -136,7 +137,11 @@ function lm_trust_region_reflective(
             println("step rejected - positive update")
         else
             #Ψ = g'*δ + 1/2*(δ'* (J'J+ Cₖ) * δ) #
-            ρᶠ = numerator / Ψ # definition of the step improvement
+            if abs(Ψ) < 1e-16
+                ρᶠ = 0.0
+            else
+                ρᶠ = numerator / Ψ # definition of the step improvement
+            end
             # Accept or reject step
             if ρᶠ > step_threshold
                 x .= x_new

@@ -158,7 +158,6 @@ end
 
 
 function solve_damped_system_recursive_coleman!(p_cache, R_cache, QTr_cache, λ, n, D, A, perm, v_row)
-    sqrt_λ = √λ
 
     for c_idx in 1:n
         fill!(v_row, 0.0)
@@ -166,7 +165,7 @@ function solve_damped_system_recursive_coleman!(p_cache, R_cache, QTr_cache, λ,
         var_idx = perm[c_idx]
         d_val = D isa Diagonal ? D[var_idx, var_idx] : D[var_idx]
         a_val = A isa Diagonal ? A[var_idx, var_idx] : A[var_idx]
-        v_row[c_idx] = sqrt_λ * d_val + √a_val
+        v_row[c_idx] = v_row[c_idx] = d_val * sqrt(λ + a_val)
         v_rhs = 0.0
         
         for i in c_idx:n

@@ -66,7 +66,7 @@ function lm_trust_region_reflective(
     res::Function,
     jac::Function,
     x0::Array{T},
-    subproblem_strategy::SubProblemStrategy = SVDSolve(),
+    subproblem_strategy::SubProblemStrategy = QRrecursiveSolve(),
     scaling_strategy::ScalingStrategy = ColemanandLiScaling();
     lb::Array{T} = fill(-Inf, length(x0)),
     ub::Array{T} = fill(Inf, length(x0)),

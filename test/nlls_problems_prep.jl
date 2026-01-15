@@ -266,9 +266,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
            result = solver_func(
                prob_data.residual_func,
                prob_data.jacobian_func,
-               prob_data.x0,
-               nonlinearlstr.QRSolve(),
-               scaling_strategy;
+               prob_data.x0;
                lb = prob_data.bl,
                ub = prob_data.bu,
                max_iter = max_iter,
@@ -279,9 +277,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
            t = @elapsed solver_func(
                prob_data.residual_func,
                prob_data.jacobian_func,
-               prob_data.x0,
-               nonlinearlstr.QRSolve(),
-               scaling_strategy;
+               prob_data.x0;
                lb = prob_data.bl,
                ub = prob_data.bu,
                max_iter = max_iter,

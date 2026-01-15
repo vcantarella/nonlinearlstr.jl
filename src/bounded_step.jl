@@ -1,12 +1,20 @@
-function bounded_step(::ColemanandLiScaling, δ, lb, ub, Dk, A, J, g, x, radius)
+function bounded_step(scaling_strategy::ColemanandLiScaling, δ, lb, ub, Dk, A, J, g, x, radius, cache)
+    # Unpack buffers from cache
+    hits = cache.hits
+    p_refl = cache.p_refl
+    dg = cache.dg
+    v = cache.v_scaling
+    Jv_buff = cache.J_v_buffer
     n = length(x)
-    # 1. Define the trial step and step-back factor
-    pₖ = δ
+    
+    # 1. Define the trial step
+    pₖ = δ # Alias
     Θ = 0.995
 
     # 2. Calculate α_boundary and identify which bounds are hit
     α_boundary = Inf
-    hits = zeros(Int, n) # To store which bounds are hit
+    fill!(hits, 0)
+    
     for i in eachindex(pₖ)
         αᵢ = Inf
         hit_i = 0
@@ -19,152 +27,155 @@ function bounded_step(::ColemanandLiScaling, δ, lb, ub, Dk, A, J, g, x, radius)
         end
         if αᵢ < α_boundary
             α_boundary = αᵢ
-            hits .= 0
+            fill!(hits, 0)
             hits[i] = hit_i
         elseif αᵢ == α_boundary && hit_i != 0
             hits[i] = hit_i
         end
     end
 
-    Cₖ = Dk * A * Dk
-    Mₖ = J'J + Cₖ #This is the quadratic element in Coleman and Li
+    # Helper function for Quadratic term: v' * M_k * v
+    # M_k = J'J + C_k, where C_k = Dk * A * Dk
+    # val = ||J*v||^2 + v' * C_k * v
+    function compute_quadratic_form(vec_in)
+        # 1. J*v part (Allocation free using buffer)
+        mul!(Jv_buff, J, vec_in)
+        term1 = dot(Jv_buff, Jv_buff)
+        
+        # 2. C_k part
+        # C_k is diagonal. C_k[i] = Dk[i]^2 * A[i]
+        term2 = 0.0
+        # Assuming Dk and A are diagonal or vectors
+        @inbounds for i in 1:n
+            d_val = Dk isa Diagonal ? Dk[i,i] : Dk[i]
+            a_val = A isa Diagonal ? A[i,i] : A[i]
+            c_val = d_val^2 * a_val
+            term2 += vec_in[i]^2 * c_val
+        end
+        return term1 + term2
+    end
+    
+    # Initial Model Value
+    # Ψ = g'*δ + 0.5 * δ' * Mₖ * δ
+    quad_term = compute_quadratic_form(δ)
+    Ψ = dot(g, δ) + 0.5 * quad_term
 
     if α_boundary > 1.0
-        δ = pₖ*0.995
-        Ψ = g'*δ + 1/2*(δ' * Mₖ * δ)
+        # Step is valid, just scale back slightly for safety
+        # δ .*= 0.995 # Careful, input δ might be cache.p, don't mutate if used elsewhere or if const
+        # Better to return scaled version
+        δ = δ * 0.995 
+        
+        # Recompute Ψ for scaled step
+        # Ψ = g'*δ + 0.5 * (0.995^2 * quad_term)
+        # Optimization:
+        Ψ = dot(g, δ) + 0.5 * (0.995^2 * quad_term)
     else
-        # 3. The final step is limited by the boundary and then scaled back
-        τ⁺ = min(1.0, α_boundary)
-        τ⁺ *= Θ
-        # sₖ will be in the line search from 0 to τ⁺
-        # a = pₖ'Mₖ*pₖ # a will defined the shape of the parabola (a > 0: convex)
-        # if a > 0
-        #     #calculate the lowest value:
-        #     τᶜ = -g'pₖ / a
-        #     if τᶜ < 0
-        #         τᶜ = Inf
-        #     elseif τᶜ > τ⁺
-        #         τᶜ = τ⁺
-        #     end
-        # else
-        #     τᶜ = τ⁺
-        # end
-        sₖ = τ⁺ * pₖ
+        # 3. Hit boundary logic
+        τ⁺ = min(1.0, α_boundary) * Θ
+        sₖ = τ⁺ * pₖ # Allocates vector, usually acceptable or use buffer
+        
+        # ... (Line search logic skipped for brevity, standard Trust Region usually takes step to boundary) ...
+        
         δ = sₖ
-        Ψ = g'*δ + 1/2*(δ' * Mₖ * δ)
-        # --- REFLECTIVE STEP CALCULATION (Coleman & Li) ---
-        # Only consider reflection if the step actually hit a boundary (tau_star < 1.0)
+        quad_term_s = compute_quadratic_form(δ)
+        Ψ = dot(g, δ) + 0.5 * quad_term_s
+
+        # --- REFLECTIVE STEP ---
         if τ⁺ < 1.0 && any(hits .!= 0)
-            # 1. Calculate the step TO the boundary
             s_boundary = τ⁺ * pₖ
-
-            # 2. Define the reflected direction from the boundary point
-            p_refl = copy(pₖ)
-            p_refl[hits .!= 0] .*= -1.0
-
-            # 3. Perform a line search for the reflected part of the step
-            #    The search is for a step `s_part2` along `p_refl`
-            #    The total step will be `s_boundary + s_part2`
-
-            # The remaining trust region radius for the second part of the step
-            radius_remaining = radius - norm(Dk * s_boundary)
-            if radius_remaining < 0
-                radius_remaining = 0.0
+            
+            # Construct p_refl
+            copyto!(p_refl, pₖ)
+            @inbounds for i in 1:n
+                if hits[i] != 0
+                    p_refl[i] *= -1.0
+                end
             end
-            # Find the intersection with the trust region boundary along p_refl
-            norm_Dk_prefl = norm(Dk * p_refl)
-            τ_tr = radius_remaining / norm_Dk_prefl
 
-            # Find the intersection with the physical bounds along p_refl
-            # starting from the point x + s_boundary
+            # Radius Logic (Corrected in previous turn)
+            norm_s_boundary = norm(Dk * s_boundary)
+            radius_remaining = max(0.0, radius - norm_s_boundary)
+            
+            norm_Dk_prefl = norm(Dk * p_refl)
+            τ_tr = norm_Dk_prefl > 1e-16 ? radius_remaining / norm_Dk_prefl : Inf
+
+            # Boundary Logic for p_refl
             x_on_boundary = x + s_boundary
             α_boundary_refl = Inf
             for i in eachindex(p_refl)
-                if p_refl[i] < 0 && lb[i] > -Inf
-                    α_boundary_refl =
-                        min(α_boundary_refl, (lb[i] - x_on_boundary[i]) / p_refl[i])
+                # ... (Standard boundary check) ...
+                 if p_refl[i] < 0 && lb[i] > -Inf
+                    α_boundary_refl = min(α_boundary_refl, (lb[i] - x_on_boundary[i]) / p_refl[i])
                 elseif p_refl[i] > 0 && ub[i] < Inf
-                    α_boundary_refl =
-                        min(α_boundary_refl, (ub[i] - x_on_boundary[i]) / p_refl[i])
+                    α_boundary_refl = min(α_boundary_refl, (ub[i] - x_on_boundary[i]) / p_refl[i])
                 end
             end
             τ_boundary_refl = Θ * α_boundary_refl
-
-            # The length of the second part of the step is limited by both
+            
             τ_part2max = min(τ_tr, τ_boundary_refl)
-            # Now we do a line search from 0 to τ_part2:
-            a = dot(p_refl, Mₖ * p_refl)
-            if a > 0
-                τ_part2 = -dot(g, p_refl) / a
-                if τ_part2 > τ_part2max
-                    τ_part2 = τ_part2max
-                else
-                    τ_part2 = 0
-                end
+            
+            # Line search
+            a_refl = compute_quadratic_form(p_refl)
+            
+            if a_refl > 0
+                τ_part2 = -dot(g, p_refl) / a_refl
+                τ_part2 = clamp(τ_part2, 0.0, τ_part2max)
             else
-                τ_part2 = 0 # It's not a convex path, so the minimum is at the boundary
-                # at the boundary or at the full reflective step
+                τ_part2 = 0.0 
             end
+            
             s_part2 = τ_part2 * p_refl
-
-            # The final reflected step is the "dogleg" path
             sᵣ = s_boundary + s_part2
 
-            # Calculate the model value for this new reflected step
-            Ψ_refl = g'*sᵣ + 0.5*(sᵣ' * Mₖ * sᵣ)
-            # If the reflected step improves the model value, accept it as the new trial step
+            Ψ_refl = dot(g, sᵣ) + 0.5 * compute_quadratic_form(sᵣ)
+            
             if Ψ_refl < Ψ
                 println("  -> Accepting reflective step")
                 δ = sᵣ
                 Ψ = Ψ_refl
             end
         end
-        # --- END REFLECTIVE STEP ---
-        # 1. Define the scaled gradient direction
-        # v corresponds to components of Dk^(-2).
-        # Assuming Dk is Diagonal.
-        v = 1 ./ (Dk.diag .^ 2)
-        dg = - v .* g # same as: Dk^(-2) * g
-        # 2. Calculate the optimal UNCONSTRAINED step length along d_grad
-        # The correct formula is τ = - (g'd) / (d' M d)
-        # We must check that the denominator is positive to ensure it's a minimum
-        a = dot(dg, Mₖ * dg)
-        τ_unc = if a > 0
-            -dot(g, dg) / a
-        else
-            Inf # It's not a convex path, so the minimum is at the boundary
+        
+        # --- GRADIENT STEP ---
+        # v = 1 ./ (Dk.diag .^ 2)
+        @inbounds for i in 1:n
+            d_val = Dk isa Diagonal ? Dk[i,i] : Dk[i]
+            v[i] = 1.0 / (d_val^2)
+            dg[i] = -v[i] * g[i]
         end
-
-        # 3. Calculate the step length to the TRUST REGION boundary
+        
+        # Unconstrained optimal
+        a_grad = compute_quadratic_form(dg)
+        τ_unc = a_grad > 0 ? -dot(g, dg) / a_grad : Inf
+        
+        # Trust region
         norm_Dk_dg = norm(Dk * dg)
-        τ_tr = radius / norm_Dk_dg #Inf
-
-        # 4. Calculate the step length to the PHYSICAL boundary
+        τ_tr = radius / norm_Dk_dg
+        
+        # Boundary
         α_boundary_grad = Inf
         for i in eachindex(dg)
-            if dg[i] < 0 && lb[i] > -Inf
+             if dg[i] < 0 && lb[i] > -Inf
                 α_boundary_grad = min(α_boundary_grad, (lb[i] - x[i]) / dg[i])
             elseif dg[i] > 0 && ub[i] < Inf
                 α_boundary_grad = min(α_boundary_grad, (ub[i] - x[i]) / dg[i])
             end
         end
-        # Also apply the step-back factor here
         τ_boundary = Θ * α_boundary_grad
-
-        # 5. The optimal step length is the minimum of all three constraints
+        
         τ_optimal = min(τ_unc, τ_tr, τ_boundary)
-
-        # 6. Calculate the optimal step and the true denominator Ψˢ
-        δᵍ = τ_optimal * dg
-        Ψˢ = dot(g, δᵍ) + 0.5 * dot(δᵍ, Mₖ * δᵍ)
-
-        # 7. Finally, calculate the true ρᶜ
-        # Ensure the denominator isn't zero or positive (model must predict decrease)
+        
+        # Check gradient improvement
+        δᵍ = τ_optimal * dg # Allocates
+        Ψˢ = dot(g, δᵍ) + 0.5 * compute_quadratic_form(δᵍ)
+        
         if Ψˢ < Ψ
-            δ = δᵍ
-            Ψ = Ψˢ
-            println("  -> Accepting gradient step")
+             δ = δᵍ
+             Ψ = Ψˢ
+             println("  -> Accepting gradient step")
         end
     end
+    
     return δ, Ψ
 end

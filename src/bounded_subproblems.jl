@@ -1,4 +1,5 @@
 abstract type BoundedSubproblemCache end
+abstract type BoundedSubproblemCache end
 
 mutable struct ColemanandLiCache{S<:SubProblemStrategy,F,D,JV,V,M,T} <: BoundedSubproblemCache
     factorization::F
@@ -14,6 +15,14 @@ mutable struct ColemanandLiCache{S<:SubProblemStrategy,F,D,JV,V,M,T} <: BoundedS
     qtf_buffer::Vector{T}    # Stores Q'f
     v_row::Vector{T}         # Row workspace
     perm_buffer::Vector{T}   # Buffer for permutation operations
+
+    # --- NEW BUFFERS FOR STEP & ALGORITHM ---
+    x_new::Vector{T}
+    hits::Vector{Int}
+    p_refl::Vector{T}
+    dg::Vector{T}
+    v_scaling::Vector{T} # For 1 ./ Dk^2
+    J_v_buffer::Vector{T} # For J * v (size m)
 
     ColemanandLiCache(
         strategy::S,
@@ -35,18 +44,52 @@ mutable struct ColemanandLiCache{S<:SubProblemStrategy,F,D,JV,V,M,T} <: BoundedS
         p = zeros(T, n)
         p_newton = zeros(T, n)
         R_buffer = zeros(T, n, n)
-        rhs_buffer = zeros(T, max(m, n)) 
-        qtf_buffer = zeros(T, max(m, n))
+        rhs_buffer = zeros(T, n) # Only needs to store size n for the solve
+        qtf_buffer = zeros(T, m) # Stores Q'f (size m)
         v_row = zeros(T, n)
         perm_buffer = zeros(T, n)
 
+        # New buffers
+        x_new = zeros(T, n)
+        hits = zeros(Int, n)
+        p_refl = zeros(T, n)
+        dg = zeros(T, n)
+        v_scaling = zeros(T, n)
+        J_v_buffer = zeros(T, m)
+
         new{S,typeof(F),typeof(Dk), typeof(A), typeof(v), typeof(J_buffer), T}(
             F, Dk, A, v, J_buffer, 
-            p, p_newton, R_buffer, rhs_buffer, qtf_buffer, v_row, perm_buffer
+            p, p_newton, R_buffer, rhs_buffer, qtf_buffer, v_row, perm_buffer,
+            x_new, hits, p_refl, dg, v_scaling, J_v_buffer
         )
     end
 end
 
+"""
+    update_cache!(cache, strategy, scaling_strat, J, x, lb, ub, g)
+
+Updates the cache in-place with new Jacobian and scaling information.
+"""
+function update_cache!(cache::ColemanandLiCache, strategy, scaling_strat, J, x, lb, ub, g)
+    # 1. Update Factorization (reuse J_buffer if available via factorize!)
+    # Note: If J changed significantly, factorize! might allocate, but usually it's optimized.
+    # Assuming factorize! exists or we fall back to creating a new one.
+    if hasmethod(factorize!, Tuple{typeof(cache), typeof(strategy), typeof(J)})
+         factorize!(cache, strategy, J)
+    else
+         cache.factorization = factorize(strategy, J)
+    end
+
+    # 2. Update Scaling
+    # Ideally scaling() should have an in-place version, but for now we re-assign.
+    # If Dk, A, v are immutable structs or vectors, this is standard.
+    # To be fully non-allocating, we would need update_scaling!(cache.Dk, ...).
+    Dk, A, v = scaling(scaling_strat, J; x=x, lb=lb, ub=ub, g=g)
+    cache.scaling_matrix = Dk
+    cache.Jv = A
+    cache.v = v
+    return cache
+end
 
 """
     solve_subproblem(strategy::SubProblemStrategy, J, f, radius, cache::ColemanandLiCache)
@@ -62,17 +105,66 @@ function solve_subproblem(
 ) where {T<:Real}
     Dk = cache.scaling_matrix
     A = cache.Jv
+    F = cache.factorization
     
     n = size(J, 2)
-    # We can use cache.p to store δgn initially
-    δgn = [J; √A*Dk] \ [-f; zeros(n)] # avoid extra computation # Allocating for now
-    
-    if norm(Dk*δgn) <= radius
-        λ = zero(T)
-        δ = δgn
+    m = size(J, 1)
+
+    # 1. Prepare Q'f (Used for both δgn and find_λ)
+    # Reuse qtf_buffer.
+    # qtf_src = F.Q' * f. We use mul! if possible.
+    # For standard QRPivoted, Q' * f allocates. 
+    # Optimized way:
+    if hasproperty(F, :Q)
+        mul!(cache.qtf_buffer, F.Q', f)
     else
+         # Fallback for generic factorizations
+         cache.qtf_buffer .= F.Q' * f
+    end
+
+    # 2. Prepare R_buffer
+    # Reuse code from find_λ to setup R
+    src_R = hasproperty(F, :factors) ? F.factors : F.R
+    if m >= n
+        @inbounds for j in 1:n, k in 1:j; cache.R_buffer[k,j] = src_R[k,j]; end
+    else
+        fill!(cache.R_buffer, 0.0)
+        @inbounds for j in 1:n, k in 1:min(j,m); cache.R_buffer[k,j] = src_R[k,j]; end
+    end
+    
+    # 3. Compute δgn (Gauss-Newton step, λ=0)
+    # We use the recursive solver with λ=0 to avoid the [J; √A*Dk] allocation.
+    
+    # Reset RHS buffer for δgn solve
+    @inbounds for k in 1:n
+        cache.rhs_buffer[k] = -cache.qtf_buffer[k]
+    end
+    
+    perm = hasproperty(F, :p) ? F.p : collect(1:n)
+    
+    # Solve with λ=0
+    # Note: R_buffer is modified in-place! So we must RE-COPY it for find_λ later if we branch there.
+    # However, since we likely branch, we should perhaps copy R_buffer to a temp or restore it.
+    # Strategy: Use R_buffer for δgn. If rejected, find_λ will re-initialize R_buffer anyway.
+    solve_damped_system_recursive_coleman!(
+        cache.p, cache.R_buffer, cache.rhs_buffer, zero(T), n, Dk, A, perm, cache.v_row
+    )
+    
+    # Check Trust Region in SCALED space
+    norm_scaled_gn = norm(Dk * cache.p) # allocation-free if Dk is Diagonal
+
+    if norm_scaled_gn <= radius
+        λ = zero(T)
+        δ = cache.p # This aliases cache.p, which is fine as long as we copy/use it before next call
+        # If the caller needs δ to persist, they should copy it. 
+        # But wait, find_λ returns `p` which aliases cache.p too. 
+        # So we stick to the pattern: return the buffer.
+    else
+        # R_buffer is dirty. find_λ_colemanandli must re-initialize it.
+        # It does: loop 2 of find_λ starts by copying src_R -> R_buffer.
         λ, δ = find_λ_colemanandli(strategy, cache, radius, J, Dk, A, f, 200, 1e-6)
     end
+    
     return λ, δ
 end
 

@@ -66,7 +66,4 @@ using Test
 end
 
 fig_nls = build_performance_plots(df_nls_proc)
-if !isdir("../test_plots")
-    mkdir("../test_plots")
-end
-save("../test_plots/nlls_solver_performance.png", fig_nls)
+save("test_plots/nlls_solver_performance.png", fig_nls)

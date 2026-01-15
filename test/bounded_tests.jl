@@ -21,6 +21,7 @@ solvers = [
     ("Scipy-LeastSquares", nothing),  # Special handling in test_solver_on_problem
     ("Scipy-LSMR", nothing),  # Special handling in test_solver_on_problem
     ("PRIMA-BOBYQA", nothing),  # Special handling in test_solver_on_problem
+    ("LSO-Levenberg-QR", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.QR())),
 ]
 
 # 3. Run benchmark
@@ -74,5 +75,5 @@ end
 
 # 7. Plots
 fig_nls = build_performance_plots(df_nls_proc)
-save("../test_plots/bounded_solver_performance.png", fig_nls)
+save("test_plots/bounded_solver_performance.png", fig_nls)
 println("\nPerformance plot saved to '../test_plots/bounded_solver_performance.png'")

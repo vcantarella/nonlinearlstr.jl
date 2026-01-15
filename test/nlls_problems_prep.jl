@@ -360,6 +360,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     output_length = prob_data.n,
                 ),
                 solver_func,
+                lower = prob_data.bl,
+                upper = prob_data.bu,
             )
             t = @elapsed LeastSquaresOptim.optimize!(
                 LeastSquaresProblem(
@@ -369,6 +371,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     output_length = prob_data.n,
                 ),
                 solver_func,
+                lower = prob_data.bl,
+                upper = prob_data.bu,
             )
             x_opt = res.minimizer
             iterations = res.iterations

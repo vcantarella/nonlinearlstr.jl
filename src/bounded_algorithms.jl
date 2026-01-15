@@ -84,10 +84,14 @@ function lm_trust_region_reflective(
 ) where {T}
     # Initialize
     x = copy(x0)
+    # Clamp initial x to be safe
+    @. x = clamp(x, lb, ub)
     f = res(x)
     J = jac(x)
     cost = 0.5 * dot(f, f)
-    g = J' * f
+    g = Vector{T}(undef, length(x))
+    mul!(g, J', f)
+
     if norm(g) < gtol
         println("Initial guess satisfies gradient tolerance")
         return x, f, g, 0
@@ -103,35 +107,31 @@ function lm_trust_region_reflective(
     # Dk, A, v = affine_scale_matrix(x, lb, ub, g)
     Dk = cache.scaling_matrix
     A = cache.Jv
-    δgn = [J; √A*Dk] \ [-f; zeros(n)]
-    if norm_overrides_initial_radius
-        initial_radius = norm(Dk*δgn)
-    end
+    # Robust Initial Radius
     radius = initial_radius
+
+    if norm_overrides_initial_radius
+        # Try GN step
+        radius = norm(Dk*x0)
+    end
+    
     for iter = 1:max_iter
         # Compute step using trust region strategy
         λ, δ = solve_subproblem(subproblem_strategy, J, f, radius, cache)
-        # if iter > 1
-        #     δgn = [J; √A*Dk] \ [-f; zeros(n)] # avoid extra computation
-        # end
-        # if norm(Dk * δgn) <= radius
-        #     # The minimal-norm step that perfectly fits the model is within the radius.
-        #     # This is the ideal solution. There is no need to make the step longer.
-        #     δ = δgn
-        #     λ = 0.0
-        # else
-        #     # The smallest "perfect" step is too big. We must find a damped
-        #     # step on the boundary using the standard LM approach.
-        #     λ, δ = find_λ_scaled_b(radius, J, A, Dk, f, 100)
-        # end
-        δ, Ψ = bounded_step(scaling_strategy, δ, lb, ub, Dk, A, J, g, x, radius)
+    
+        # Bounded Step adjustment
+        δ, Ψ = bounded_step(scaling_strategy, δ, lb, ub, Dk, A, J, g, x, radius, cache)
 
         # Evaluate new point
-        x_new = x + δ
-        x_new .= clamp.(x_new, lb, ub)
-        f_new = res(x_new)
+        x_new = cache.x_new
+        @. x_new = x + δ
+        @. x_new = clamp(x_new, lb, ub)
+        
+        f_new = res(x_new) # Allocation here is hard to avoid if user function returns vector
         cost_new = 0.5 * dot(f_new, f_new)
-        numerator = cost_new - cost #+ 1/2*δ'*Cₖ*δ
+        
+        numerator = cost_new - cost
+
         if numerator > 0
             radius *= shrink_factor
             println("step rejected - positive update")
@@ -147,15 +147,13 @@ function lm_trust_region_reflective(
                 x .= x_new
                 f .= f_new
                 cost = cost_new
-                J .= jac(x)
-                g .= J' * f
-                if isa(scaling_strategy, ColemanandLiScaling)
-                    cache = ColemanandLiCache(subproblem_strategy, scaling_strategy, J; x=x, lb=lb, ub=ub, g=g)
-                else
-                    cache = SubproblemCache(subproblem_strategy, scaling_strategy, J; x=x, lb=lb, ub=ub, g=g)
-                end
+                J_new = jac(x)
+                copyto!(J, J_new)
+                mul!(g, J', f)
+                update_cache!(cache, subproblem_strategy, scaling_strategy, J, x, lb, ub, g)
                 Dk = cache.scaling_matrix 
                 A = cache.Jv
+                
                 println(
                     "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
                 )

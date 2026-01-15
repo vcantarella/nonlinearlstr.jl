@@ -37,7 +37,7 @@ using nonlinearlstr
 
             @test cache.scaling_matrix == I(n)
             @test typeof(cache.factorization) <:
-                  Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY, LinearAlgebra.QRPivoted}
+                  Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY,LinearAlgebra.QRPivoted}
         end
 
         @testset "SVD Cache" begin
@@ -56,7 +56,7 @@ using nonlinearlstr
 
             @test cache.scaling_matrix == I(n)
             @test typeof(cache.factorization) <:
-                  Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY, LinearAlgebra.QRPivoted}
+                  Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY,LinearAlgebra.QRPivoted}
         end
     end
 
@@ -104,7 +104,7 @@ using nonlinearlstr
             Dk = I(n)
             # 1. Extract Permutation and Caches
             perm = hasproperty(F, :p) ? F.p : (1:n)
-            
+
             p = zeros(n)
             R_buffer = copy(F.R)
             # Precompute Q' * f. 
@@ -112,17 +112,33 @@ using nonlinearlstr
             QTr_orig = F.Q' * f
             rhs_orig = -QTr_orig
             rhs_buffer = copy(rhs_orig)
-            perm_buffer = copy(p) 
+            perm_buffer = copy(p)
             dpdλ = copy(p)
-            
+
             # We need a workspace vector for the update. 
             # Ideally passed in cache, here we allocate if not available or assume safety.
             # For this snippet, I will allocate one locally to be safe.
             v_row = zeros(n)
-            nonlinearlstr.solve_damped_system_recursive_inplace!(p, R_buffer, rhs_buffer, λ, n, Dk, perm, v_row)
+            nonlinearlstr.solve_damped_system_recursive_inplace!(
+                p,
+                R_buffer,
+                rhs_buffer,
+                λ,
+                n,
+                Dk,
+                perm,
+                v_row,
+            )
 
             # Analytical derivative
-            nonlinearlstr.solve_for_dp_dlambda_scaled!(dpdλ, R_buffer, p, Dk, perm, perm_buffer)
+            nonlinearlstr.solve_for_dp_dlambda_scaled!(
+                dpdλ,
+                R_buffer,
+                p,
+                Dk,
+                perm,
+                perm_buffer,
+            )
             # Finite difference reference
             dp_dλ_fd = ForwardDiff.derivative(λ -> get_p(J, f, λ), λ)
 

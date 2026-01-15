@@ -24,12 +24,12 @@ using nonlinearlstr
 # Parametric wrapper encodes sizes at the type level so NLLSsolver can use
 # static sizes while we still carry a runtime `prob_data` instance.
 struct ProbDataResidual{NB,M} <: NLLSsolver.AbstractResidual
-    prob_data
+    prob_data::Any
 end
 
 # Construct a properly-parameterized wrapper from runtime `prob_data`.
 # NB is the number of variable blocks the residual depends on (we use 1).
-ProbDataResidual(prob_data) = ProbDataResidual{1, prob_data.n}(prob_data)
+ProbDataResidual(prob_data) = ProbDataResidual{1,prob_data.n}(prob_data)
 
 Base.eltype(::ProbDataResidual) = Float64
 NLLSsolver.ndeps(::ProbDataResidual{NB,M}) where {NB,M} = static(NB) # number of variable blocks
@@ -50,7 +50,11 @@ end
 
 # Provide an analytic residual+jacobian implementation so the solver uses it
 # rather than attempting autodiff through potentially non-Dual-friendly code.
-function NLLSsolver.computeresjacstatic(varflags::StaticInt{NB}, res::ProbDataResidual{NB,M}, vars) where {NB,M}
+function NLLSsolver.computeresjacstatic(
+    varflags::StaticInt{NB},
+    res::ProbDataResidual{NB,M},
+    vars,
+) where {NB,M}
     vb = isa(vars, Tuple) ? vars[1] : vars
     x = collect(vb)
     r = SVector{M}(res.prob_data.residual_func(x))
@@ -221,7 +225,14 @@ end
 function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_iter = 100)
     """Test a single solver on a problem"""
     try
-        if solver_name in ["LM-QR", "LM-QR-scaled", "LM-SVD", "LM-QR-Recursive", "LM-QR-Recursive-Scaled", "LM-QR-Scaled"]
+        if solver_name in [
+            "LM-QR",
+            "LM-QR-scaled",
+            "LM-SVD",
+            "LM-QR-Recursive",
+            "LM-QR-Recursive-Scaled",
+            "LM-QR-Scaled",
+        ]
             # Use residual-Jacobian interface
             if contains(solver_name, "scaled") || contains(solver_name, "Scaled")
                 scaling_strategy = nonlinearlstr.JacobianScaling()
@@ -262,31 +273,31 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             converged = norm(g_opt, 2) < 1e-6
         elseif solver_name in ["TRF", "TRF-scaled"]
             scaling_strategy = nonlinearlstr.ColemanandLiScaling()
-           
-           result = solver_func(
-               prob_data.residual_func,
-               prob_data.jacobian_func,
-               prob_data.x0;
-               lb = prob_data.bl,
-               ub = prob_data.bu,
-               max_iter = max_iter,
-               gtol = 1e-6,
-           )
-           #run one more time for timing:
 
-           t = @elapsed solver_func(
-               prob_data.residual_func,
-               prob_data.jacobian_func,
-               prob_data.x0;
-               lb = prob_data.bl,
-               ub = prob_data.bu,
-               max_iter = max_iter,
-               gtol = 1e-6,
-           )
+            result = solver_func(
+                prob_data.residual_func,
+                prob_data.jacobian_func,
+                prob_data.x0;
+                lb = prob_data.bl,
+                ub = prob_data.bu,
+                max_iter = max_iter,
+                gtol = 1e-6,
+            )
+            #run one more time for timing:
 
-           x_opt, r_opt, g_opt, iterations = result
-           final_cost = 0.5 * dot(r_opt, r_opt)
-           converged = norm(g_opt, 2) < 1e-6
+            t = @elapsed solver_func(
+                prob_data.residual_func,
+                prob_data.jacobian_func,
+                prob_data.x0;
+                lb = prob_data.bl,
+                ub = prob_data.bu,
+                max_iter = max_iter,
+                gtol = 1e-6,
+            )
+
+            x_opt, r_opt, g_opt, iterations = result
+            final_cost = 0.5 * dot(r_opt, r_opt)
+            converged = norm(g_opt, 2) < 1e-6
         elseif solver_name in ["PRIMA-NEWUOA", "PRIMA-BOBYQA"]
             # Use objective-only interface
             if solver_name == "PRIMA-NEWUOA"
@@ -329,18 +340,18 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             g_opt = prob_data.grad_func(x_opt)
             iterations = sol.stats.nsteps
             converged = SciMLBase.successful_retcode(sol)
-        # elseif contains(solver_name, "MINPACK-")
-        #     n_res(u, p) = residual(nlp, u)
-        #     nl_jac(u, p) = Matrix(jac_residual(prob, u))
-        #     nl_func = NonlinearFunction(n_res, jac = nl_jac)
-        #     prob_nl = NonlinearLeastSquaresProblem(nl_func, prob_data.x0)
-        #     sol = solve(prob_nl, solver_func(); maxiters = max_iter)
-        #     t = @elapsed solve(prob_nl, solver_func(); maxiters = max_iter)
-        #     x_opt = sol.u
-        #     final_cost = prob_data.obj_func(x_opt)
-        #     g_opt = prob_data.grad_func(x_opt)
-        #     iterations = sol.stats.nsteps
-        #     converged = SciMLBase.successful_retcode(sol)
+            # elseif contains(solver_name, "MINPACK-")
+            #     n_res(u, p) = residual(nlp, u)
+            #     nl_jac(u, p) = Matrix(jac_residual(prob, u))
+            #     nl_func = NonlinearFunction(n_res, jac = nl_jac)
+            #     prob_nl = NonlinearLeastSquaresProblem(nl_func, prob_data.x0)
+            #     sol = solve(prob_nl, solver_func(); maxiters = max_iter)
+            #     t = @elapsed solve(prob_nl, solver_func(); maxiters = max_iter)
+            #     x_opt = sol.u
+            #     final_cost = prob_data.obj_func(x_opt)
+            #     g_opt = prob_data.grad_func(x_opt)
+            #     iterations = sol.stats.nsteps
+            #     converged = SciMLBase.successful_retcode(sol)
         elseif contains(solver_name, "JSO-")
             stats = solver_func(prob, max_iter = max_iter)
             t = @elapsed solver_func(prob, max_iter = max_iter)
@@ -445,13 +456,17 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             res_obj = ProbDataResidual(prob_data)
             # create concrete types from runtime sizes
             var_type = typeof(NLLSsolver.EuclideanVector(prob_data.x0...))
-            res_type = ProbDataResidual{1, prob_data.n}
+            res_type = ProbDataResidual{1,prob_data.n}
             problem = let p = NLLSsolver.NLLSProblem(var_type, res_type)
-                    NLLSsolver.addvariable!(p, NLLSsolver.EuclideanVector(prob_data.x0...))
-                    NLLSsolver.addcost!(p, res_obj)
-                    p
-                end
-            options = NLLSsolver.NLLSOptions(reldcost=1e-11, iterator=solver_func, maxiters=max_iter)
+                NLLSsolver.addvariable!(p, NLLSsolver.EuclideanVector(prob_data.x0...))
+                NLLSsolver.addcost!(p, res_obj)
+                p
+            end
+            options = NLLSsolver.NLLSOptions(
+                reldcost = 1e-11,
+                iterator = solver_func,
+                maxiters = max_iter,
+            )
             result = NLLSsolver.optimize!(problem, options)
             t = @elapsed NLLSsolver.optimize!(problem, options)
             x_opt = collect(problem.variables[1])

@@ -11,7 +11,7 @@ nls_problems = find_nlls_problems(20) # Benchmark on all available NLS problems
 solvers = [
     ("LM-SVD", nonlinearlstr.lm_trust_region),
     ("LM-QR", nonlinearlstr.lm_trust_region),
-    ("LM-QR-Recursive", nonlinearlstr.lm_trust_region)
+    ("LM-QR-Recursive", nonlinearlstr.lm_trust_region),
 ]
 
 # 3. Run benchmark

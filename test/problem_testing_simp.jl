@@ -13,16 +13,16 @@ solvers = [
     # nonlinearlstr solvers (keep all)
     ("LM-QR", nonlinearlstr.lm_trust_region),
     ("LM-SVD", nonlinearlstr.lm_trust_region),
-    
+
     # PRIMA (Best: NEWUOA for unconstrained)
-    ("PRIMA-NEWUOA", nothing), 
+    ("PRIMA-NEWUOA", nothing),
 
     # NonlinearSolve.jl (keep all)
-    ("NonlinearSolve-TrustRegion", NonlinearSolve.TrustRegion), 
+    ("NonlinearSolve-TrustRegion", NonlinearSolve.TrustRegion),
     ("NonlinearSolve-LevenbergMarquardt", NonlinearSolve.LevenbergMarquardt),
-    ("NonlinearSolve-GaussNewton", NonlinearSolve.GaussNewton), 
+    ("NonlinearSolve-GaussNewton", NonlinearSolve.GaussNewton),
     ("NonlinearSolve-PolyAlg", NonlinearSolve.FastShortcutNLLSPolyalg),
-    
+
     # JSOSolvers (Best: TRON)
     ("JSO-TRON", tron),
 
@@ -55,7 +55,7 @@ using Test
     if !isempty(summary_nls)
         qr_row = summary_nls[summary_nls.solver .== "LM-QR", :]
         svd_row = summary_nls[summary_nls.solver .== "LM-SVD", :]
-        
+
         if !isempty(qr_row)
             @test qr_row[1, :percentage_success] > 0.9
         end
@@ -66,4 +66,4 @@ using Test
 end
 
 fig_nls = build_performance_plots(df_nls_proc)
-save("test_plots/nlls_solver_performance.png", fig_nls)
+save("../test_plots/nlls_solver_performance.png", fig_nls)

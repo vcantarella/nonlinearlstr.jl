@@ -11,7 +11,7 @@ x0 = ones(n)
 function res(x)
     r = zeros(m)
     r[1:n] .= x .- 1.0
-    r[n+1:end] .= 0.1
+    r[(n+1):end] .= 0.1
     return r
 end
 
@@ -24,7 +24,7 @@ end
 x = copy(x0)
 f = res(x)
 J = jac(x)
-radius = 0.1 
+radius = 0.1
 
 println("Profiling LM-QR...")
 strategy = nonlinearlstr.QRSolve()
@@ -35,8 +35,8 @@ cache = nonlinearlstr.SubproblemCache(strategy, scaling, J)
 nonlinearlstr.solve_subproblem(strategy, J, f, radius, cache)
 
 Profile.clear()
-@profile for i in 1:1000
+@profile for i = 1:1000
     nonlinearlstr.solve_subproblem(strategy, J, f, radius, cache)
 end
 
-Profile.print(format=:flat, sortedby=:count, mincount=50)
+Profile.print(format = :flat, sortedby = :count, mincount = 50)

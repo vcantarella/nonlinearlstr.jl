@@ -100,9 +100,25 @@ function lm_trust_region_reflective(
     #x = clamp.(x, lb, ub)
     m, n = size(J)
     if isa(scaling_strategy, ColemanandLiScaling)
-        cache = ColemanandLiCache(subproblem_strategy, scaling_strategy, J; x=x, lb=lb, ub=ub, g=g)
+        cache = ColemanandLiCache(
+            subproblem_strategy,
+            scaling_strategy,
+            J;
+            x = x,
+            lb = lb,
+            ub = ub,
+            g = g,
+        )
     else
-        cache = SubproblemCache(subproblem_strategy, scaling_strategy, J; x=x, lb=lb, ub=ub, g=g)
+        cache = SubproblemCache(
+            subproblem_strategy,
+            scaling_strategy,
+            J;
+            x = x,
+            lb = lb,
+            ub = ub,
+            g = g,
+        )
     end
     # Dk, A, v = affine_scale_matrix(x, lb, ub, g)
     Dk = cache.scaling_matrix
@@ -114,11 +130,11 @@ function lm_trust_region_reflective(
         # Try GN step
         radius = norm(Dk*x0)
     end
-    
+
     for iter = 1:max_iter
         # Compute step using trust region strategy
         λ, δ = solve_subproblem(subproblem_strategy, J, f, radius, cache)
-    
+
         # Bounded Step adjustment
         δ, Ψ = bounded_step(scaling_strategy, δ, lb, ub, Dk, A, J, g, x, radius, cache)
 
@@ -126,10 +142,10 @@ function lm_trust_region_reflective(
         x_new = cache.x_new
         @. x_new = x + δ
         @. x_new = clamp(x_new, lb, ub)
-        
+
         f_new = res(x_new) # Allocation here is hard to avoid if user function returns vector
         cost_new = 0.5 * dot(f_new, f_new)
-        
+
         numerator = cost_new - cost
 
         if numerator > 0
@@ -151,9 +167,9 @@ function lm_trust_region_reflective(
                 copyto!(J, J_new)
                 mul!(g, J', f)
                 update_cache!(cache, subproblem_strategy, scaling_strategy, J, x, lb, ub, g)
-                Dk = cache.scaling_matrix 
+                Dk = cache.scaling_matrix
                 A = cache.Jv
-                
+
                 println(
                     "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
                 )

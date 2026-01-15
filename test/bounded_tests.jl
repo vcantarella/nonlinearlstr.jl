@@ -26,7 +26,7 @@ solvers = [
 
 # 3. Run benchmark
 println("Running benchmark on $(length(nls_problems)) problems...")
-nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 400)
+nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 450)
 
 # 4. Analyze results
 df_nls = DataFrame(nls_results)
@@ -45,7 +45,7 @@ display(summary_nls)
 @testset "Bounded Solver Performance" begin
     # Check that TRF has a reasonable success rate (e.g., > 80% relative to best)
     # Note: Success definition in compare_with_best is being close to the best found solution
-    
+
     trf_success = summary_nls[summary_nls.solver .== "TRF", :percentage_success]
     if !isempty(trf_success)
         @test trf_success[1] > 0.8
@@ -59,11 +59,16 @@ println("="^60)
 
 for row in eachrow(summary_nls)
     if row.percentage_success < 1.0
-        println("\nSolver '$(row.solver)' success rate: $(round(row.percentage_success * 100, digits=1))%")
-        
-        failed = df_nls_proc[(df_nls_proc.solver .== row.solver) .& (.!df_nls_proc.is_success), :]
+        println(
+            "\nSolver '$(row.solver)' success rate: $(round(row.percentage_success * 100, digits=1))%",
+        )
+
+        failed = df_nls_proc[
+            (df_nls_proc.solver .== row.solver) .& (.!df_nls_proc.is_success),
+            :,
+        ]
         if nrow(failed) > 0
-            sort!(failed, :gap_to_best, rev=true)
+            sort!(failed, :gap_to_best, rev = true)
             for r in eachrow(first(failed, 5)) # Show top 5 failures
                 println("  Problem: $(r.problem)")
                 println("    Obj: $(r.final_cost) vs Best: $(r.min_solution)")
@@ -75,5 +80,5 @@ end
 
 # 7. Plots
 fig_nls = build_performance_plots(df_nls_proc)
-save("test_plots/bounded_solver_performance.png", fig_nls)
+save("../test_plots/bounded_solver_performance.png", fig_nls)
 println("\nPerformance plot saved to '../test_plots/bounded_solver_performance.png'")

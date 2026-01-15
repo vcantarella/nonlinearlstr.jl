@@ -120,7 +120,10 @@ solvers = [
     ("LSO-DogLeg-QR", LeastSquaresOptim.Dogleg(LeastSquaresOptim.QR())),
     ("LSO-Levenberg-QR", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.QR())),
     ("LSO-DogLeg-chol", LeastSquaresOptim.Dogleg(LeastSquaresOptim.Cholesky())),
-    ("LSO-Levenberg-chol", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.Cholesky())),
+    (
+        "LSO-Levenberg-chol",
+        LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.Cholesky()),
+    ),
     ("LSO-DogLeg-LSMR", LeastSquaresOptim.Dogleg(LeastSquaresOptim.LSMR())),
     ("LSO-Levenberg-LSMR", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.LSMR())),
     ("Scipy-LeastSquares", nothing),
@@ -163,12 +166,22 @@ for (name, prob_data) in zip(problem_names, problems)
         print("  Testing $solver_name... ")
         result = test_solver_on_problem(solver_name, solver_func, prob_data, nothing, 400)
         if result.success && result.converged
-            println("✓ obj=$(round(result.final_cost, digits=8)), iters=$(result.iterations)")
+            println(
+                "✓ obj=$(round(result.final_cost, digits=8)), iters=$(result.iterations)",
+            )
         else
             status = result.success ? "no convergence" : "failed"
             println("✗ $status")
         end
-        result_with_problem = merge(result, (problem = name, nvars = prob_data.n, nresiduals = prob_data.m, initial_objective = prob_data.obj_func(prob_data.x0),))
+        result_with_problem = merge(
+            result,
+            (
+                problem = name,
+                nvars = prob_data.n,
+                nresiduals = prob_data.m,
+                initial_objective = prob_data.obj_func(prob_data.x0),
+            ),
+        )
         push!(results, result_with_problem)
     end
 end
@@ -199,12 +212,22 @@ for (name, prob_data) in zip(problem_names, problems_log)
         print("  Testing $solver_name... ")
         result = test_solver_on_problem(solver_name, solver_func, prob_data, nothing, 400)
         if result.success && result.converged
-            println("✓ obj=$(round(result.final_cost, digits=8)), iters=$(result.iterations)")
+            println(
+                "✓ obj=$(round(result.final_cost, digits=8)), iters=$(result.iterations)",
+            )
         else
             status = result.success ? "no convergence" : "failed"
             println("✗ $status")
         end
-        result_with_problem = merge(result, (problem = name, nvars = prob_data.n, nresiduals = prob_data.m, initial_objective = prob_data.obj_func(prob_data.x0),))
+        result_with_problem = merge(
+            result,
+            (
+                problem = name,
+                nvars = prob_data.n,
+                nresiduals = prob_data.m,
+                initial_objective = prob_data.obj_func(prob_data.x0),
+            ),
+        )
         push!(results, result_with_problem)
     end
 end
@@ -220,4 +243,3 @@ display(summary_df)
 @test summary_df[summary_df[!, :solver] .== "LM-SVD", :percentage_success][1] > 0.49
 fig = build_performance_plots(df_proc)
 save("../test_plots/hardluksan_nls_solver_performance_log.png", fig)
-

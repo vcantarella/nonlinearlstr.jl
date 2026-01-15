@@ -18,7 +18,7 @@ function scaling(::JacobianScaling, J; τ = 1e-12, kwargs...)
     return Dk
 end
 
-function scaling(::ColemanandLiScaling, J; x, lb, ub, g, τ=1e-16)
+function scaling(::ColemanandLiScaling, J; x, lb, ub, g, τ = 1e-16)
     v = ones(length(x))
     jᵥ = zeros(length(x))
     for i in eachindex(x)

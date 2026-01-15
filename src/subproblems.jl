@@ -40,7 +40,7 @@ Compute QR factorization with column pivoting for the Jacobian matrix J.
 # Returns
 - QR factorization object with column pivoting
 """
-factorize(::Union{QRSolve, QRrecursiveSolve}, J) = qr(J, ColumnNorm())
+factorize(::Union{QRSolve,QRrecursiveSolve}, J) = qr(J, ColumnNorm())
 
 """
     factorize(::SVDSolve, J)
@@ -59,47 +59,55 @@ factorize(::SVDSolve, J) = svd(J)
 mutable struct SubproblemCache{S<:SubProblemStrategy,F,D,T,M}
     factorization::F
     scaling_matrix::D
-    
+
     # --- Buffers ---
-    J_buffer::M              
-    
+    J_buffer::M
+
     p::Vector{T}             # Step direction 
     p_newton::Vector{T}      # Gradient dp/dλ
-    
+
     R_buffer::Matrix{T}      # n x n mutable R
     rhs_buffer::Vector{T}    # n mutable RHS
     qtf_buffer::Vector{T}    # Stores Q'f
     v_row::Vector{T}         # Row workspace
     perm_buffer::Vector{T}   # Buffer for permutation operations
-    
+
     function SubproblemCache(
         strategy::S,
         scaling_strat::Sc,
         J::AbstractMatrix{T};
         kwargs...,
     ) where {S<:SubProblemStrategy,Sc<:ScalingStrategy,T}
-        
+
         m, n = size(J)
         F = factorize(strategy, J)
         Dk = scaling(scaling_strat, J; kwargs)
-        
+
         if J isa StridedMatrix{T}
             J_buffer = similar(J)
         else
             J_buffer = nothing
         end
-        
+
         p = zeros(T, n)
         p_newton = zeros(T, n)
         R_buffer = zeros(T, n, n)
-        rhs_buffer = zeros(T, max(m, n)) 
+        rhs_buffer = zeros(T, max(m, n))
         qtf_buffer = zeros(T, max(m, n))
         v_row = zeros(T, n)
         perm_buffer = zeros(T, n)
-        
+
         new{S,typeof(F),typeof(Dk),T,typeof(J_buffer)}(
-            F, Dk, J_buffer, 
-            p, p_newton, R_buffer, rhs_buffer, qtf_buffer, v_row, perm_buffer
+            F,
+            Dk,
+            J_buffer,
+            p,
+            p_newton,
+            R_buffer,
+            rhs_buffer,
+            qtf_buffer,
+            v_row,
+            perm_buffer,
         )
     end
 end
@@ -116,14 +124,14 @@ function factorize!(cache, strategy, J::AbstractMatrix)
     if cache.J_buffer !== nothing
         # Copy J into the buffer. This avoids allocating a new matrix for the input.
         copyto!(cache.J_buffer, J)
-        
-        if strategy isa Union{QRSolve, QRrecursiveSolve}
+
+        if strategy isa Union{QRSolve,QRrecursiveSolve}
             # QR Path: In-place on J_buffer
             # Note: qr! still allocates small vectors (tau, pivots) and the wrapper struct.
             # This is O(n) alloc, saving the O(mn) matrix alloc.
             cache.factorization = qr!(cache.J_buffer, ColumnNorm())
             return cache.factorization
-            
+
         elseif strategy isa SVDSolve
             # SVD Path: In-place input
             # svd! destroys the input (J_buffer) to save the copy allocation.
@@ -174,12 +182,12 @@ function solve_subproblem(
 ) where {T<:Real}
     F = cache.factorization
     Dk = cache.scaling_matrix
-    
+
     # Note: F \ -f might allocate if not careful, but usually acceptable for the check.
     # To be strictly zero-alloc, we would need to ldiv! into cache.p here.
-    δgn = F \ -f 
+    δgn = F \ -f
     # δgn = cache.p
-    
+
     if norm(δgn) <= radius
         λ = zero(T)
         δ = δgn
@@ -451,13 +459,13 @@ function find_λ_scaled(strategy::QRrecursiveSolve, cache, Δ, J, D, f, maxiters
     qtf = cache.qtf_buffer
     v_row = cache.v_row
     perm_buffer = cache.perm_buffer
-    
+
     m, n = size(J)
-    
+
     # FIX 1: Type Stable Permutation
     # ensure perm is always Vector{Int}
     perm = hasproperty(F, :p) ? F.p : collect(1:n)
-    
+
     # Lambda initialization
     l₀ = 0.0
     u₀ = norm(D*(J'f))/Δ
@@ -467,48 +475,69 @@ function find_λ_scaled(strategy::QRrecursiveSolve, cache, Δ, J, D, f, maxiters
     lₖ = l₀
 
     # 1. Setup (One-time allocation for Q'*f allowed)
-    qtf_src = F.Q' * f 
-    @inbounds for i in 1:m
+    qtf_src = F.Q' * f
+    @inbounds for i = 1:m
         qtf[i] = qtf_src[i]
     end
-    
+
     # 2. Main Loop
-    for i in 1:maxiters
+    for i = 1:maxiters
         # FIX 3: Efficient R copy
         # Access F.factors directly if possible to avoid UpperTriangular wrapper allocs
         # If F is QRPivoted or QR, it has :factors.
         src_R = hasproperty(F, :factors) ? F.factors : F.R
-        
+
         if m >= n
-             @inbounds for j in 1:n, k in 1:j; R_buffer[k,j] = src_R[k,j]; end
+            @inbounds for j = 1:n, k = 1:j
+                ;
+                R_buffer[k, j] = src_R[k, j];
+            end
         else
-             fill!(R_buffer, 0.0)
-             @inbounds for j in 1:n, k in 1:min(j,m); R_buffer[k,j] = src_R[k,j]; end
+            fill!(R_buffer, 0.0)
+            @inbounds for j = 1:n, k = 1:min(j, m)
+                ;
+                R_buffer[k, j] = src_R[k, j];
+            end
         end
-        
+
         # Reset RHS
-        @inbounds for k in 1:n
+        @inbounds for k = 1:n
             rhs_buffer[k] = -qtf[k]
         end
 
         # Recursive Update
-        solve_damped_system_recursive_inplace!(p, R_buffer, rhs_buffer, λ, n, D, perm, v_row)
-        
+        solve_damped_system_recursive_inplace!(
+            p,
+            R_buffer,
+            rhs_buffer,
+            λ,
+            n,
+            D,
+            perm,
+            v_row,
+        )
+
         norm_Dp = norm(D*p)
         if (1-θ)*Δ < norm_Dp < (1+θ)*Δ
             break
         end
-        
+
         ϕ = norm_Dp - Δ
-        if ϕ < 0; uₖ = λ; else; lₖ = λ; end
-        
+        if ϕ < 0
+            ;
+            uₖ = λ;
+        else
+            ;
+            lₖ = λ;
+        end
+
         # Derivative
         solve_for_dp_dlambda_scaled!(dpdλ, R_buffer, p, D, perm, perm_buffer)
-        
+
         # Newton Update
         denominator = (D*p)' * (D * dpdλ)
-        λ = λ - (norm_Dp - Δ)/Δ * ( (norm_Dp^2) / denominator )
-        
+        λ = λ - (norm_Dp - Δ)/Δ * ((norm_Dp^2) / denominator)
+
         if !(uₖ < λ <= lₖ)
             λ = max(lₖ + 0.01*(uₖ - lₖ), √(lₖ * uₖ))
         end
@@ -516,49 +545,58 @@ function find_λ_scaled(strategy::QRrecursiveSolve, cache, Δ, J, D, f, maxiters
     return λ, p
 end
 
-function solve_damped_system_recursive_inplace!(p_cache, R_cache, QTr_cache, λ, n, D, perm, v_row)
+function solve_damped_system_recursive_inplace!(
+    p_cache,
+    R_cache,
+    QTr_cache,
+    λ,
+    n,
+    D,
+    perm,
+    v_row,
+)
     sqrt_λ = sqrt(λ)
 
-    for c_idx in 1:n
+    for c_idx = 1:n
         fill!(v_row, 0.0)
-        
+
         var_idx = perm[c_idx]
         d_val = D isa Diagonal ? D[var_idx, var_idx] : D[var_idx]
-        
+
         v_row[c_idx] = sqrt_λ * d_val
         v_rhs = 0.0
-        
-        for i in c_idx:n
+
+        for i = c_idx:n
             r_ii = R_cache[i, i]
             v_val = v_row[i]
-            
+
             if abs(v_val) > 0 || i == c_idx
                 c, s = compute_givens(r_ii, v_val)
-                
+
                 R_cache[i, i] = c * r_ii + s * v_val
-                
-                @inbounds for k in (i + 1):n
+
+                @inbounds for k = (i+1):n
                     val_R = R_cache[i, k]
                     val_v = v_row[k]
                     R_cache[i, k] = c * val_R + s * val_v
-                    v_row[k]      = -s * val_R + c * val_v
+                    v_row[k] = -s * val_R + c * val_v
                 end
-                
+
                 val_rhs_R = QTr_cache[i]
                 QTr_cache[i] = c * val_rhs_R + s * v_rhs
-                v_rhs        = -s * val_rhs_R + c * v_rhs
+                v_rhs = -s * val_rhs_R + c * v_rhs
             end
         end
     end
-    
+
     # Use View for RHS to match dimension n
     ldiv!(p_cache, UpperTriangular(R_cache), view(QTr_cache, 1:n))
-    
+
     copyto!(v_row, p_cache)
-    @inbounds for i in 1:n
+    @inbounds for i = 1:n
         p_cache[perm[i]] = v_row[i]
     end
-    
+
     return p_cache
 end
 
@@ -566,36 +604,36 @@ function solve_for_dp_dlambda_scaled!(dp_dλ, R_cache, p, D, perm, perm_buffer)
     # FIX 2: Zero-allocation D scaling
     # Replaces @. dp_dλ = -(D.diag^2) * dp_dλ
     if D isa Diagonal
-        @inbounds for i in 1:length(p)
+        @inbounds for i = 1:length(p)
             d_val = D.diag[i]
             # Handle Bool/Number conversion implicitly by math
-            val_sq = d_val * d_val 
+            val_sq = d_val * d_val
             dp_dλ[i] = -val_sq * p[i]
         end
     else
         # Fallback (allocating, but rare in this context)
         dp_dλ .= -(D' * (D * p))
     end
-    
+
     # Permute RHS into perm_buffer
-    @inbounds for i in 1:length(perm)
+    @inbounds for i = 1:length(perm)
         perm_buffer[i] = dp_dλ[perm[i]]
     end
-    
+
     # Solve
     ldiv!(LowerTriangular(R_cache'), perm_buffer)
     ldiv!(UpperTriangular(R_cache), perm_buffer)
-    
+
     # Unpermute
-    @inbounds for i in 1:length(perm)
+    @inbounds for i = 1:length(perm)
         dp_dλ[perm[i]] = perm_buffer[i]
     end
-    
+
     return dp_dλ
 end
 
 # Robust calculation of c, s for a Givens rotation
-@inline function compute_givens(f::T, g::T) where T<:Real
+@inline function compute_givens(f::T, g::T) where {T<:Real}
     if g == 0
         return one(T), zero(T)
     end

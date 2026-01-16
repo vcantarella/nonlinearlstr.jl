@@ -1,3 +1,51 @@
+"""
+    lm_trust_region(
+        res::Function,
+        jac::Function,
+        x0::Array{T},
+        subproblem_strategy::SubProblemStrategy = SVDSolve(),
+        scaling_strategy::ScalingStrategy = NoScaling();
+        initial_radius::Real = 1.0,
+        max_trust_radius::Real = 1e12,
+        min_trust_radius::Real = 1e-8,
+        step_threshold::Real = 0.001,
+        shrink_threshold::Real = 0.25,
+        expand_threshold::Real = 0.75,
+        shrink_factor::Real = 0.25,
+        expand_factor::Real = 2.0,
+        max_iter::Int = 100,
+        gtol::Real = 1e-6,
+        ftol::Real = 1e-15,
+        norm_overrides_initial_radius::Bool = true,
+    ) where {T}
+
+Solves a nonlinear least squares problem using a Levenberg-Marquardt style trust-region algorithm.
+Minimizes `0.5 * ||f(x)||^2`.
+
+# Arguments
+- `res::Function`: The residual function `f(x)` returning a vector.
+- `jac::Function`: The Jacobian function `J(x)` returning the Jacobian matrix.
+- `x0::Array{T}`: Initial guess for the solution.
+- `subproblem_strategy`: Strategy for solving the subproblem (default: `SVDSolve()`).
+                         Options: `SVDSolve()`, `QRSolve()`, `QRrecursiveSolve()`.
+- `scaling_strategy`: Strategy for scaling variables (default: `NoScaling()`).
+
+# Keywords
+- `initial_radius`: Initial trust region radius (default: 1.0).
+- `max_trust_radius`: Maximum allowed radius.
+- `min_trust_radius`: Minimum radius before termination.
+- `step_threshold`: Minimum relative improvement to accept a step.
+- `max_iter`: Maximum number of iterations.
+- `gtol`: Gradient tolerance for convergence (`norm(g) < gtol`).
+- `ftol`: Function tolerance for convergence.
+- `norm_overrides_initial_radius`: If true, `initial_radius` is scaled by the norm of the first step.
+
+# Returns
+- `x`: Optimized parameters.
+- `f`: Final residuals.
+- `g`: Final gradient.
+- `iter`: Number of iterations performed.
+"""
 function lm_trust_region(
     res::Function,
     jac::Function,

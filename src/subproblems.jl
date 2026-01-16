@@ -1,4 +1,3 @@
-
 """
     SubProblemStrategy
 
@@ -645,4 +644,24 @@ end
     c = f * inv_r
     s = g * inv_r
     return c, s
+end
+
+"""
+    update_cache!(cache::SubproblemCache, strategy, scaling_strat, J, x, lb, ub, g)
+
+Updates the cache in-place with new Jacobian and scaling information.
+"""
+function update_cache!(cache::SubproblemCache, strategy, scaling_strat, J, x, lb, ub, g)
+    factorize!(cache, strategy, J)
+
+    # Update scaling
+    # We handle the case where scaling returns a tuple (like ColemanandLiScaling)
+    # by taking the first element, assuming it's the scaling matrix D.
+    val = scaling(scaling_strat, J; x = x, lb = lb, ub = ub, g = g)
+    if val isa Tuple
+        cache.scaling_matrix = val[1]
+    else
+        cache.scaling_matrix = val
+    end
+    return cache
 end

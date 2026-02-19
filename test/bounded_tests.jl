@@ -22,6 +22,10 @@ solvers = [
     ("Scipy-LSMR", nothing),  # Special handling in test_solver_on_problem
     ("PRIMA-BOBYQA", nothing),  # Special handling in test_solver_on_problem
     ("LSO-Levenberg-QR", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.QR())),
+    ("NonlinearSolve-TrustRegion", NonlinearSolve.TrustRegion),
+    ("NonlinearSolve-LevenbergMarquardt", NonlinearSolve.LevenbergMarquardt),
+    ("NonlinearSolve-GaussNewton", NonlinearSolve.GaussNewton),
+    ("NonlinearSolve-PolyAlg", NonlinearSolve.FastShortcutNLLSPolyalg),
 ]
 
 # 3. Run benchmark

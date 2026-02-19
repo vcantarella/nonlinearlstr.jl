@@ -183,24 +183,34 @@ end
 
 
 function create_nls_functions(prob)
-    """Create Julia function wrappers for NLSProblems problem"""
-
-    # Get problem infor
-    #m = prob.meta.nequ  # Number of residuals
+    """Create Julia function wrappers for NLSProblems with in-place support"""
     x0 = copy(prob.meta.x0)
     bl = copy(prob.meta.lvar)
     bu = copy(prob.meta.uvar)
 
-    # Define functions using NLPModels interface
+    # Initial probe to get exact sizes
+    r0 = residual(prob, x0)
+    n = length(r0)
+    m = length(x0)
+
+    # 1. Out-of-place functions (Required for SciPy, PRIMA)
     residual_func(x) = residual(prob, x)
     jacobian_func(x) = Matrix(jac_residual(prob, x))
-    n, m = size(jacobian_func(x0))
 
-    # Create objective as 0.5 * ||r||²
+    # 2. In-place functions (Crucial for LeastSquaresOptim, SciML)
+    residual_func!(r, x) = residual!(prob, x, r)
+    
+    # NLPModels jac_residual! typically fills a sparse vector of non-zeros.
+    # To feed a dense matrix J to standard solvers safely:
+    function jacobian_func!(J, x)
+        # We compute the sparse Jacobian and copy it to the pre-allocated dense J
+        # This is a compromise to bridge sparse NLPModels with dense solvers
+        J .= Matrix(jac_residual(prob, x)) 
+    end
+
     obj_func(x) = obj(prob, x)
     grad_func(x) = grad(prob, x)
 
-    # Use Gauss-Newton approximation for Hessian
     hess_func(x) = begin
         J = jacobian_func(x)
         return J' * J
@@ -213,8 +223,11 @@ function create_nls_functions(prob)
         bl = bl,
         bu = bu,
         initial_cost = obj_func(x0),
+        # Return both versions!
         residual_func = residual_func,
         jacobian_func = jacobian_func,
+        residual_func! = residual_func!, 
+        jacobian_func! = jacobian_func!,
         obj_func = obj_func,
         grad_func = grad_func,
         hess_func = hess_func,
@@ -329,10 +342,18 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             iterations = result[2].nf
             converged = PRIMA.issuccess(result[2])
         elseif contains(solver_name, "NonlinearSolve-")
-            n_res(u, p) = prob_data.residual_func(u)
-            nl_jac(u, p) = prob_data.jacobian_func(u)
-            nl_func = NonlinearFunction(n_res, jac = nl_jac)
-            prob_nl = NonlinearLeastSquaresProblem(nl_func, prob_data.x0)
+            n_res!(du, u, p) = prob_data.residual_func!(du, u)
+            nl_jac!(J, u, p) = prob_data.jacobian_func!(J, u)
+            nl_func = NonlinearFunction(n_res!, jac = nl_jac!,
+                resid_prototype = zeros(prob_data.n))
+            lb = prob_data.bl
+            ub = prob_data.bu
+            if any(lb .> -1e-30) || any(ub .< 1e30)
+                prob_nl = NonlinearLeastSquaresProblem(nl_func, prob_data.x0;
+                lb=lb, ub=ub)
+            else
+                prob_nl = NonlinearLeastSquaresProblem(nl_func, prob_data.x0)
+            end
             sol = solve(prob_nl, solver_func(); maxiters = max_iter)
             t = @elapsed solve(prob_nl, solver_func(); maxiters = max_iter)
             x_opt = sol.u
@@ -361,13 +382,11 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             iterations = stats.iter
             converged = stats.status == :first_order
         elseif contains(solver_name, "LSO-")
-            f_func! = (r, x) -> copyto!(r, prob_data.residual_func(x))
-            J_func! = (J, x) -> copyto!(J, prob_data.jacobian_func(x))
             res = LeastSquaresOptim.optimize!(
                 LeastSquaresProblem(
                     x = prob_data.x0,
-                    f! = f_func!,
-                    g! = J_func!,
+                    f! = prob_data.residual_func!,
+                    g! = prob_data.jacobian_func!,
                     output_length = prob_data.n,
                 ),
                 solver_func,
@@ -377,8 +396,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             t = @elapsed LeastSquaresOptim.optimize!(
                 LeastSquaresProblem(
                     x = prob_data.x0,
-                    f! = f_func!,
-                    g! = J_func!,
+                    f! = prob_data.residual_func!,
+                    g! = prob_data.jacobian_func!,
                     output_length = prob_data.n,
                 ),
                 solver_func,
@@ -450,30 +469,73 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             pyresult = nothing
             GC.gc()
         elseif contains(solver_name, "NLLSsolver-")
-            # Build and populate the NLLSsolver problem in one block to avoid
-            # REPL/display trying to summarize an empty problem (which triggers
-            # reductions over empty collections inside NLLSsolver.show).
+            # 1. Instantiate the exact objects first to guarantee type stability
+            var_obj = NLLSsolver.EuclideanVector(prob_data.x0...)
             res_obj = ProbDataResidual(prob_data)
-            # create concrete types from runtime sizes
-            var_type = typeof(NLLSsolver.EuclideanVector(prob_data.x0...))
-            res_type = ProbDataResidual{1,prob_data.n}
-            problem = let p = NLLSsolver.NLLSProblem(var_type, res_type)
-                NLLSsolver.addvariable!(p, NLLSsolver.EuclideanVector(prob_data.x0...))
-                NLLSsolver.addcost!(p, res_obj)
-                p
-            end
+            
+            # 2. Extract their literal types to build the problem safely
+            var_type = typeof(var_obj)
+            res_type = typeof(res_obj)
+            
+            problem = NLLSsolver.NLLSProblem(var_type, res_type)
+            
+            # 3. Add the exact objects we just extracted types from
+            NLLSsolver.addvariable!(problem, var_obj)
+            NLLSsolver.addcost!(problem, res_obj)
+            
             options = NLLSsolver.NLLSOptions(
                 reldcost = 1e-11,
                 iterator = solver_func,
                 maxiters = max_iter,
             )
+            
             result = NLLSsolver.optimize!(problem, options)
             t = @elapsed NLLSsolver.optimize!(problem, options)
+            
             x_opt = collect(problem.variables[1])
             final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)
             iterations = result.niterations
             converged = result.termination > 0
+        elseif contains(solver_name, "LsqFit")
+            # LsqFit wants: model(xdata, p) ≈ ydata
+            # We want: r(p) ≈ 0
+            
+            # 1. Create dummy data
+            ydata = zeros(prob_data.n)
+            xdata = zeros(prob_data.n) # The model will ignore this
+            
+            # 2. Wrap the residual to accept (and ignore) xdata
+            model(x, p) = prob_data.residual_func(p)
+            
+            # 3. Wrap the Jacobian to accept (and ignore) xdata
+            jac_model(x, p) = prob_data.jacobian_func(p)
+            
+            # Run the solver
+            fit = LsqFit.curve_fit(
+                model, 
+                jac_model, 
+                xdata, 
+                ydata, 
+                prob_data.x0; 
+                lower = prob_data.bl, 
+                upper = prob_data.bu, 
+                maxIter = max_iter, 
+                g_tol = 1e-6
+            )
+            
+            # Run again for timing
+            t = @elapsed LsqFit.curve_fit(
+                model, jac_model, xdata, ydata, prob_data.x0; 
+                lower = prob_data.bl, upper = prob_data.bu, maxIter = max_iter, g_tol = 1e-6
+            )
+            
+            x_opt = fit.param
+            iterations = fit.iterations
+            converged = fit.converged
+            final_cost = prob_data.obj_func(x_opt)
+            g_opt = prob_data.grad_func(x_opt)
+
         else
             error("Unknown solver: solver_name")
         end

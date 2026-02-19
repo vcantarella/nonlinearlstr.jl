@@ -6,7 +6,7 @@ using NonlinearSolve
 using Revise
 using DataFrames
 using nonlinearlstr
-
+using LsqFit
 nls_problems = find_nlls_problems(999)
 
 solvers = [
@@ -35,6 +35,9 @@ solvers = [
 
     # NLLSsolver (Best: LevenbergMarquardt)
     ("NLLSsolver-levenbergmarquardt", NLLSsolver.levenbergmarquardt),
+
+    #LsqFit: lets see how it goes
+    ("LsqFit-LM", nothing)
 ]
 
 # Run benchmark

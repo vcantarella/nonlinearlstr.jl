@@ -1,5 +1,4 @@
 abstract type BoundedSubproblemCache end
-abstract type BoundedSubproblemCache end
 
 mutable struct ColemanandLiCache{S<:SubProblemStrategy,F,D,JV,V,M,T} <:
                BoundedSubproblemCache

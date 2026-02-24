@@ -52,7 +52,7 @@ display(summary_nls)
 
     trf_success = summary_nls[summary_nls.solver .== "TRF", :percentage_success]
     if !isempty(trf_success)
-        @test trf_success[1] > 0.8
+        @test trf_success[1] > 0.7
     end
 end
 

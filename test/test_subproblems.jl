@@ -58,6 +58,15 @@ using nonlinearlstr
             @test typeof(cache.factorization) <:
                   Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY,LinearAlgebra.QRPivoted}
         end
+
+        @testset "EVD Cache" begin
+            strat = nonlinearlstr.EVDSolve()
+            scaling = nonlinearlstr.NoScaling()
+            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
+
+            @test cache.scaling_matrix == I(n)
+            @test typeof(cache.factorization) <:LinearAlgebra.Eigen
+        end
     end
 
     @testset "Low-level Solving Functions" begin
@@ -74,9 +83,11 @@ using nonlinearlstr
             J_aug = [J; sqrt(λ) * I(n)]
             qrf = qr(J_aug)
             Dk = I(n)
+            dp_dλ = zeros(size(p_ref))
+
 
             # Analytical derivative
-            dp_dλ = nonlinearlstr.solve_for_dp_dlambda_scaled(strat, qrf, p_ref, Dk)
+            nonlinearlstr.solve_for_dp_dlambda_scaled!(strat, dp_dλ, qrf, p_ref, Dk)
 
             # Finite difference reference
             dp_dλ_fd = ForwardDiff.derivative(λ -> get_p(J, f, λ), λ)
@@ -144,6 +155,23 @@ using nonlinearlstr
 
             @test dpdλ ≈ dp_dλ_fd atol=1e-6
         end
+
+        @testset "Derivative dp/dλ - EVD Method" begin
+            strat = nonlinearlstr.EVDSolve()
+            F = eigen(J'J)
+            Dk = I(n)
+
+            # Analytical derivative
+            p, dp_dλ_evd = nonlinearlstr.solve_augmented_with_derivative(strat, F, J, -f, λ)
+
+
+            # Automatic difference reference
+            dp_dλ_fd = ForwardDiff.derivative(λ -> get_p(J, f, λ), λ)
+
+            @test dp_dλ_evd ≈ dp_dλ_fd atol=1e-6
+        end
+
+
     end
 
     @testset "Trust Region Subproblem Solver" begin
@@ -181,6 +209,18 @@ using nonlinearlstr
             @test abs(λ_qr - λ) < 1e-3
             @test norm(δ_qr) ≈ size_p atol=1e-3
             @test δ_qr ≈ p_ref atol=1e-3
+        end
+
+        @testset "EVD Solver" begin
+            strat = nonlinearlstr.EVDSolve()
+            scaling = nonlinearlstr.NoScaling()
+            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
+
+            λ_evd, δ_evd = nonlinearlstr.solve_subproblem(strat, J, f, size_p, cache)
+
+            @test abs(λ_evd - λ) < 1e-3
+            @test norm(δ_evd) ≈ size_p atol=1e-3
+            @test δ_evd ≈ p_ref atol=1e-3
         end
 
         @testset "Method Consistency" begin

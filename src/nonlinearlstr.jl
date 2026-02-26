@@ -1,7 +1,10 @@
 module nonlinearlstr
 using LinearAlgebra
+include("types.jl")
 include("scaling.jl")
+include("caches.jl")
 include("subproblems.jl")
+include("evd_subproblem.jl")
 include("bounded_subproblems.jl")
 include("bounded_step.jl")
 include("algorithms.jl")

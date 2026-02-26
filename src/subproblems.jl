@@ -1,33 +1,4 @@
 """
-    SubProblemStrategy
-
-Abstract type defining strategies for solving subproblems in trust region methods.
-Implementations should provide methods for factorization and solving linear systems.
-"""
-abstract type SubProblemStrategy end
-
-"""
-    QRSolve <: SubProblemStrategy
-
-Strategy that uses QR factorization with column pivoting for solving subproblems.
-"""
-struct QRSolve <: SubProblemStrategy end
-
-"""
-    QRSolve <: SubProblemStrategy
-
-Strategy that reuses QR factorization with approximation.
-"""
-struct QRrecursiveSolve <: SubProblemStrategy end
-
-"""
-    SVDSolve <: SubProblemStrategy
-
-Strategy that uses Singular Value Decomposition (SVD) for solving subproblems.
-"""
-struct SVDSolve <: SubProblemStrategy end
-
-"""
     factorize(::QRSolve, J)
 
 Compute QR factorization with column pivoting for the Jacobian matrix J.
@@ -39,7 +10,20 @@ Compute QR factorization with column pivoting for the Jacobian matrix J.
 # Returns
 - QR factorization object with column pivoting
 """
-factorize(::Union{QRSolve,QRrecursiveSolve}, J) = qr(J, ColumnNorm())
+function factorize(::QRSolve, J)
+    n, m = size(J)
+    if n ≥ m 
+        return qr(J, ColumnNorm())
+    else
+        return qr(J', ColumnNorm()) 
+    end
+end
+
+function factorize(::QRrecursiveSolve, J)
+
+    return qr(J, ColumnNorm())
+
+end
 
 """
     factorize(::SVDSolve, J)
@@ -55,61 +39,6 @@ Compute Singular Value Decomposition (SVD) for the Jacobian matrix J.
 """
 factorize(::SVDSolve, J) = svd(J)
 
-mutable struct SubproblemCache{S<:SubProblemStrategy,F,D,T,M}
-    factorization::F
-    scaling_matrix::D
-
-    # --- Buffers ---
-    J_buffer::M
-
-    p::Vector{T}             # Step direction 
-    p_newton::Vector{T}      # Gradient dp/dλ
-
-    R_buffer::Matrix{T}      # n x n mutable R
-    rhs_buffer::Vector{T}    # n mutable RHS
-    qtf_buffer::Vector{T}    # Stores Q'f
-    v_row::Vector{T}         # Row workspace
-    perm_buffer::Vector{T}   # Buffer for permutation operations
-
-    function SubproblemCache(
-        strategy::S,
-        scaling_strat::Sc,
-        J::AbstractMatrix{T};
-        kwargs...,
-    ) where {S<:SubProblemStrategy,Sc<:ScalingStrategy,T}
-
-        m, n = size(J)
-        F = factorize(strategy, J)
-        Dk = scaling(scaling_strat, J; kwargs)
-
-        if J isa StridedMatrix{T}
-            J_buffer = similar(J)
-        else
-            J_buffer = nothing
-        end
-
-        p = zeros(T, n)
-        p_newton = zeros(T, n)
-        R_buffer = zeros(T, n, n)
-        rhs_buffer = zeros(T, max(m, n))
-        qtf_buffer = zeros(T, max(m, n))
-        v_row = zeros(T, n)
-        perm_buffer = zeros(T, n)
-
-        new{S,typeof(F),typeof(Dk),T,typeof(J_buffer)}(
-            F,
-            Dk,
-            J_buffer,
-            p,
-            p_newton,
-            R_buffer,
-            rhs_buffer,
-            qtf_buffer,
-            v_row,
-            perm_buffer,
-        )
-    end
-end
 
 # --- Robust Factorize! Implementation ---
 
@@ -118,20 +47,30 @@ end
 
 Updates the factorization in `cache`. Tries to use in-place operations to reduce allocations.
 """
-function factorize!(cache, strategy, J::AbstractMatrix)
+function factorize!(cache::QRSubproblemCache, strategy, J::AbstractMatrix,
+    )
     # 1. Fast Path: If we have a buffer and J is compatible, use in-place
     if cache.J_buffer !== nothing
         # Copy J into the buffer. This avoids allocating a new matrix for the input.
-        copyto!(cache.J_buffer, J)
+        
 
-        if strategy isa Union{QRSolve,QRrecursiveSolve}
-            # QR Path: In-place on J_buffer
-            # Note: qr! still allocates small vectors (tau, pivots) and the wrapper struct.
-            # This is O(n) alloc, saving the O(mn) matrix alloc.
+        if strategy isa QRSolve
+            n, m = size(J)
+            if n ≥ m
+                copyto!(cache.J_buffer, J)
+                cache.factorization = qr!(cache.J_buffer, ColumnNorm())
+            else
+                copyto!(cache.J_buffer, J')
+                cache.factorization = qr!(cache.J_buffer, ColumnNorm()) 
+            end
+            return cache.factorization
+        elseif strategy isa QRrecursiveSolve
+            copyto!(cache.J_buffer, J)
             cache.factorization = qr!(cache.J_buffer, ColumnNorm())
             return cache.factorization
 
         elseif strategy isa SVDSolve
+            copyto!(cache.J_buffer, J)
             # SVD Path: In-place input
             # svd! destroys the input (J_buffer) to save the copy allocation.
             # It still allocates U, S, Vt result arrays.
@@ -173,18 +112,85 @@ If the Gauss-Newton step ‖δ_gn‖ ≤ radius, then λ = 0 and δ = δ_gn.
 Otherwise, finds λ > 0 such that ‖D*δ‖ = radius using iterative methods.
 """
 function solve_subproblem(
-    strategy::SubProblemStrategy,
+    strategy::St,
     J::AbstractMatrix{T},
     f::AbstractVector{T},
     radius::Real,
-    cache,
-) where {T<:Real}
+    cache::QRSubproblemCache,
+) where {St<:QRSolve, T<:Real}
+    F = cache.factorization
+    Dk = cache.scaling_matrix
+
+    n, m = size(J)
+    # Note: F \ -f might allocate if not careful, but usually acceptable for the check.
+    # To be strictly zero-alloc, we would need to ldiv! into cache.p here.
+    δgn = cache.p
+    if n ≥ m
+        ldiv!(δgn, F, -f)
+    else
+        # UNDERDETERMINED: F = qr(J', ColumnNorm())
+        # We must manually calculate the minimum-norm solution.
+        P = F.P
+        z = cache.z
+        mul!(z, P',-f)
+        ldiv!(LowerTriangular(F.R'), z)
+        mul!(δgn, Matrix(F.Q), z)
+    end
+
+    if norm(δgn) <= radius
+        λ = zero(T)
+        δ = δgn
+    else
+        if n ≥ m
+            λ, δ = find_λ_scaled(strategy, cache, radius, J, Dk, f, 200, 1e-6)
+        else
+            λ, δ = find_λ_scaled_undetermined(strategy, cache, radius, J, Dk, f, 200, 1e-6)
+        end
+    end
+    return λ, δ
+end
+
+
+
+"""
+    solve_subproblem(strategy::SubProblemStrategy, J::AbstractMatrix{T}, f::AbstractVector{T}, radius::Real, cache) where {T<:Real}
+
+Solve the trust region subproblem to find the optimal step direction and Lagrange multiplier.
+
+The subproblem being solved is:
+    min_{δ} ½‖f + J*δ‖² subject to ‖D*δ‖ ≤ radius
+
+where D is the scaling matrix from the cache.
+
+# Arguments
+- `strategy`: Subproblem solving strategy (QRSolve or SVDSolve)
+- `J`: Jacobian matrix of the residual function
+- `f`: Current residual vector
+- `radius`: Trust region radius constraint
+- `cache`: SubproblemCache containing factorization and scaling information
+
+# Returns
+- `λ`: Lagrange multiplier for the trust region constraint
+- `δ`: Optimal step direction satisfying the trust region constraint
+
+# Algorithm
+If the Gauss-Newton step ‖δ_gn‖ ≤ radius, then λ = 0 and δ = δ_gn.
+Otherwise, finds λ > 0 such that ‖D*δ‖ = radius using iterative methods.
+"""
+function solve_subproblem(
+    strategy::St,
+    J::AbstractMatrix{T},
+    f::AbstractVector{T},
+    radius::Real,
+    cache::QRSubproblemCache,
+) where {St<:Union{SVDSolve, QRrecursiveSolve}, T<:Real}
     F = cache.factorization
     Dk = cache.scaling_matrix
 
     # Note: F \ -f might allocate if not careful, but usually acceptable for the check.
     # To be strictly zero-alloc, we would need to ldiv! into cache.p here.
-    δgn = F \ -f
+    δgn = cache.p 
+    ldiv!(δgn, F, -f)
     # δgn = cache.p
 
     if norm(δgn) <= radius
@@ -232,11 +238,12 @@ function find_λ_scaled(strategy::QRSolve, cache, Δ, J, D, f, maxiters, θ = 1e
     λ = λ₀
     uₖ = u₀
     lₖ = l₀
-    p = zeros(size(J, 2))
+    p = cache.p
+    dpdλ = cache.dpdλ
     b_aug = [-f; zeros(size(J, 2))]
     for i = 1:maxiters
         F = qr([J; √λ*D])
-        p = F \ b_aug
+        ldiv!(p, F, b_aug)
         # p = solve_augmented(strategy, J, D, b_aug, -f, λ)
         if (1-θ)*Δ < norm(D*p) < (1+θ)*Δ
             break
@@ -247,9 +254,80 @@ function find_λ_scaled(strategy::QRSolve, cache, Δ, J, D, f, maxiters, θ = 1e
         else
             lₖ = λ
         end
-        dpdλ = solve_for_dp_dlambda_scaled(strategy::QRSolve, F, p, D)
+        solve_for_dp_dlambda_scaled!(strategy, dpdλ, F, p, D)
         λ = λ - (norm(D*p)-Δ)/Δ*((D*p)'*(D*p)/(p'*D'*(D*dpdλ)))
-        if !(uₖ < λ <= lₖ)
+        if !(lₖ <= λ <= uₖ)
+            λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))
+        end
+    end
+    return λ, p
+end
+
+
+
+"""
+    find_λ_scaled_underdetermined(strategy::QRSolve, F, Δ, J, D, f, maxiters, θ=1e-4)
+
+Find the Lagrange multiplier λ for the scaled trust region subproblem using QR factorization.
+
+This function solves for λ such that ‖D*p‖ = Δ where p solves:
+    (JᵀJ + λDᵀD)p = -Jᵀf
+
+# Arguments
+- `strategy::QRSolve`: QR factorization strategy
+- `F`: QR factorization object (currently not used, refactored in implementation)
+- `Δ`: Trust region radius
+- `J`: Jacobian matrix
+- `D`: Diagonal scaling matrix
+- `f`: Residual vector
+- `maxiters`: Maximum number of iterations for λ search
+- `θ`: Tolerance for trust region constraint satisfaction (default: 1e-4)
+
+# Returns
+- `λ`: Lagrange multiplier
+- `p`: Step direction satisfying ‖D*p‖ ≈ Δ
+
+# Algorithm
+Uses Newton's method with safeguarding to find λ. The search is constrained
+between lower bound l₀ = 0 and upper bound u₀ = ‖D*(Jᵀf)‖/Δ.
+"""
+function find_λ_scaled_undetermined(strategy::QRSolve, cache, Δ, J, D, f, maxiters, θ = 1e-4)
+    l₀ = 0.0
+    u₀ = norm((J'f)./diag(D))/Δ
+    λ₀ = max(1e-3*u₀, √(l₀*u₀))
+    λ = λ₀
+    uₖ = u₀
+    lₖ = l₀
+    p = cache.p
+    dzdλ = cache.dzdλ
+    dpdλ = cache.dpdλ
+    z = cache.z
+    b_aug = [zeros(size(J,2)); -1/√λ*f]
+    DJ = J' ./ diag(D) # Math: D⁻¹ Jᵀ
+    for i = 1:maxiters
+        F = qr([DJ; √λ*I(size(J,1))])
+        z .= -f
+        Ru = UpperTriangular(F.R)
+        ldiv!(Ru', z)
+        ldiv!(Ru, z)
+        # ldiv!(z, F, b_aug)
+        mul!(p, J', z)
+        p .= p ./ (diag(D).^2) # D⁻²
+        # p = solve_augmented(strategy, J, D, b_aug, -f, λ)
+        if (1-θ)*Δ < norm(D*p) < (1+θ)*Δ
+            break
+        end
+        ϕ = norm(D*p)-Δ
+        if ϕ < 0
+            uₖ = λ
+        else
+            lₖ = λ
+        end
+        solve_for_dz_dlambda_scaled!(strategy, dzdλ,F, z, D)
+        mul!(dpdλ, J', dzdλ)
+        dpdλ .= dpdλ ./ (diag(D).^2) # D⁻²
+        λ = λ - (norm(D*p)-Δ)/Δ*((D*p)'*(D*p)/(p'*D'*(D*dpdλ)))
+        if !(lₖ ≤ λ ≤ uₖ)
             λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))
         end
     end
@@ -291,7 +369,8 @@ function find_λ_scaled(strategy::SVDSolve, cache, Δ, J, D, f, maxiters, θ = 1
     λ = λ₀
     uₖ = u₀
     lₖ = l₀
-    p = zeros(size(J, 2))
+    p = cache.p
+    dpdλ = cache.dpdλ
     for i = 1:maxiters
         p = solve_augmented(strategy::SVDSolve, F, J, D, -f, λ)
         if (1-θ)*Δ < norm(D*p) < (1+θ)*Δ
@@ -305,7 +384,7 @@ function find_λ_scaled(strategy::SVDSolve, cache, Δ, J, D, f, maxiters, θ = 1
         end
         dpdλ = solve_for_dp_dlambda_scaled(strategy::SVDSolve, F, D, λ, -f)
         λ = λ - (norm(D*p)-Δ)/Δ*((D*p)'*(D*p)/(p'*D'*(D*dpdλ)))
-        if !(uₖ < λ <= lₖ)
+        if !(lₖ ≤ λ ≤ uₖ)
             λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))
         end
     end
@@ -381,21 +460,40 @@ Using the QR factorization, this is solved as:
 # Returns
 - `dp_dλ`: Derivative of step direction with respect to λ
 """
-function solve_for_dp_dlambda_scaled(
+function solve_for_dp_dlambda_scaled!(
     ::QRSolve,
+    dp_dλ,
     qrf::Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY},
     p::AbstractVector,
     D::AbstractMatrix,
 )
     # Perform the QRSolve factorization to get the factors explicitly
     R = qrf.R
-    rhs = -(D'*(D*p))
+    dp_dλ .= .-(D'*(D*p))
     # Now solve (RᵀR) * (dp/dλ) = -p
     # This is done in two steps:
     # 1. Rᵀz = -p  =>  z = Rᵀ \ -p
     # 2. R(dp/dλ) = z  =>  dp/dλ = R \ z
-    dp_dλ = UpperTriangular(R) \ (LowerTriangular(R') \ rhs)
-    return dp_dλ
+    ldiv!(LowerTriangular(R'), dp_dλ)
+    ldiv!(UpperTriangular(R), dp_dλ)
+end
+
+function solve_for_dz_dlambda_scaled!(
+    ::QRSolve,
+    dz_dλ,
+    qrf::Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY},
+    z::AbstractVector,
+    D::AbstractMatrix,
+)
+    # Perform the QRSolve factorization to get the factors explicitly
+    R = qrf.R
+    dz_dλ .= .-z
+    # Now solve (RᵀR) * (dp/dλ) = -p
+    # This is done in two steps:
+    # 1. Rᵀz = -p  =>  z = Rᵀ \ -p
+    # 2. R(dp/dλ) = z  =>  dp/dλ = R \ z
+    ldiv!(LowerTriangular(R'), dz_dλ)
+    ldiv!(UpperTriangular(R), dz_dλ)
 end
 
 """
@@ -537,7 +635,7 @@ function find_λ_scaled(strategy::QRrecursiveSolve, cache, Δ, J, D, f, maxiters
         denominator = (D*p)' * (D * dpdλ)
         λ = λ - (norm_Dp - Δ)/Δ * ((norm_Dp^2) / denominator)
 
-        if !(uₖ < λ <= lₖ)
+        if !(lₖ ≤ λ ≤ uₖ)
             λ = max(lₖ + 0.01*(uₖ - lₖ), √(lₖ * uₖ))
         end
     end
@@ -651,7 +749,7 @@ end
 
 Updates the cache in-place with new Jacobian and scaling information.
 """
-function update_cache!(cache::SubproblemCache, strategy, scaling_strat, J, x, lb, ub, g)
+function update_cache!(cache::QRSubproblemCache, strategy, scaling_strat, J, x, lb, ub, g)
     factorize!(cache, strategy, J)
 
     # Update scaling

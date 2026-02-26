@@ -245,6 +245,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             "LM-QR-Recursive",
             "LM-QR-Recursive-Scaled",
             "LM-QR-Scaled",
+            "LM-EVD"
         ]
             # Use residual-Jacobian interface
             if contains(solver_name, "scaled") || contains(solver_name, "Scaled")
@@ -256,8 +257,10 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 subproblem_strategy = nonlinearlstr.QRrecursiveSolve()
             elseif contains(solver_name, "QR")
                 subproblem_strategy = nonlinearlstr.QRSolve()
-            else # contains(solver_name, "SVD")
+            elseif  contains(solver_name, "SVD")
                 subproblem_strategy = nonlinearlstr.SVDSolve()
+            else #EVDsolve
+                subproblem_strategy = nonlinearlstr.EVDSolve()
             end
 
             result = solver_func(
@@ -349,10 +352,10 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             lb = prob_data.bl
             ub = prob_data.bu
             if any(lb .> -1e-30) || any(ub .< 1e30)
-                prob_nl = NonlinearLeastSquaresProblem(nl_func, prob_data.x0;
+                prob_nl = NonlinearLeastSquaresProblem(nl_func,copy(prob_data.x0);
                 lb=lb, ub=ub)
             else
-                prob_nl = NonlinearLeastSquaresProblem(nl_func, prob_data.x0)
+                prob_nl = NonlinearLeastSquaresProblem(nl_func, copy(prob_data.x0))
             end
             sol = solve(prob_nl, solver_func(); maxiters = max_iter)
             t = @elapsed solve(prob_nl, solver_func(); maxiters = max_iter)
@@ -384,7 +387,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
         elseif contains(solver_name, "LSO-")
             res = LeastSquaresOptim.optimize!(
                 LeastSquaresProblem(
-                    x = prob_data.x0,
+                    x = copy(prob_data.x0),
                     f! = prob_data.residual_func!,
                     g! = prob_data.jacobian_func!,
                     output_length = prob_data.n,
@@ -395,7 +398,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             )
             t = @elapsed LeastSquaresOptim.optimize!(
                 LeastSquaresProblem(
-                    x = prob_data.x0,
+                    x = copy(prob_data.x0),
                     f! = prob_data.residual_func!,
                     g! = prob_data.jacobian_func!,
                     output_length = prob_data.n,
@@ -412,7 +415,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
         elseif solver_name == "Scipy-LeastSquares"
             pyresult = scipy.optimize.least_squares(
                 prob_data.residual_func,
-                prob_data.x0,
+                copy(prob_data.x0),
                 jac = prob_data.jacobian_func,
                 bounds = (prob_data.bl, prob_data.bu),
                 xtol = 1e-8,
@@ -422,7 +425,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             )
             t = @elapsed scipy.optimize.least_squares(
                 prob_data.residual_func,
-                prob_data.x0,
+                copy(prob_data.x0),
                 jac = prob_data.jacobian_func,
                 bounds = (prob_data.bl, prob_data.bu),
                 xtol = 1e-8,
@@ -441,7 +444,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
         elseif solver_name == "Scipy-LSMR"
             pyresult = scipy.optimize.least_squares(
                 prob_data.residual_func,
-                prob_data.x0,
+                copy(prob_data.x0),
                 jac = prob_data.jacobian_func,
                 bounds = (prob_data.bl, prob_data.bu),
                 tr_solver = "lsmr",
@@ -452,7 +455,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             )
             t = @elapsed scipy.optimize.least_squares(
                 prob_data.residual_func,
-                prob_data.x0,
+                copy(prob_data.x0),
                 jac = prob_data.jacobian_func,
                 bounds = (prob_data.bl, prob_data.bu),
                 xtol = 1e-8,
@@ -470,7 +473,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             GC.gc()
         elseif contains(solver_name, "NLLSsolver-")
             # 1. Instantiate the exact objects first to guarantee type stability
-            var_obj = NLLSsolver.EuclideanVector(prob_data.x0...)
+            var_obj = NLLSsolver.EuclideanVector(copy(prob_data.x0)...)
             res_obj = ProbDataResidual(prob_data)
             
             # 2. Extract their literal types to build the problem safely
@@ -490,6 +493,26 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             )
             
             result = NLLSsolver.optimize!(problem, options)
+            
+            var_obj = NLLSsolver.EuclideanVector(copy(prob_data.x0)...)
+            res_obj = ProbDataResidual(prob_data)
+            
+            # 2. Extract their literal types to build the problem safely
+            var_type = typeof(var_obj)
+            res_type = typeof(res_obj)
+            
+            problem = NLLSsolver.NLLSProblem(var_type, res_type)
+            
+            # 3. Add the exact objects we just extracted types from
+            NLLSsolver.addvariable!(problem, var_obj)
+            NLLSsolver.addcost!(problem, res_obj)
+            
+            options = NLLSsolver.NLLSOptions(
+                reldcost = 1e-11,
+                iterator = solver_func,
+                maxiters = max_iter,
+            )
+
             t = @elapsed NLLSsolver.optimize!(problem, options)
             
             x_opt = collect(problem.variables[1])
@@ -498,6 +521,10 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             iterations = result.niterations
             converged = result.termination > 0
         elseif contains(solver_name, "LsqFit")
+            # LsqFit wants: model(xdata, p) ≈ ydata
+            # We want: r(p) ≈ 0
+            
+            # 1. Crelseif contains(solver_name, "LsqFit")
             # LsqFit wants: model(xdata, p) ≈ ydata
             # We want: r(p) ≈ 0
             
@@ -517,7 +544,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 jac_model, 
                 xdata, 
                 ydata, 
-                prob_data.x0; 
+                copy(prob_data.x0); 
                 lower = prob_data.bl, 
                 upper = prob_data.bu, 
                 maxIter = max_iter, 
@@ -526,12 +553,15 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             
             # Run again for timing
             t = @elapsed LsqFit.curve_fit(
-                model, jac_model, xdata, ydata, prob_data.x0; 
+                model, jac_model, xdata, ydata, copy(prob_data.x0); 
                 lower = prob_data.bl, upper = prob_data.bu, maxIter = max_iter, g_tol = 1e-6
             )
             
             x_opt = fit.param
-            iterations = fit.iterations
+            
+            # FIX: LsqFit does not expose iterations!
+            iterations = 0 
+            
             converged = fit.converged
             final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)

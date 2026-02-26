@@ -5,17 +5,26 @@ using Test
 using CairoMakie
 
 # 1. Find problems
-nls_problems = find_nlls_problems(20) # Benchmark on all available NLS problems
+nls_problems = find_nlls_problems(50) # Benchmark on all available NLS problems
 
 # 2. Define solvers
 solvers = [
     ("LM-SVD", nonlinearlstr.lm_trust_region),
     ("LM-QR", nonlinearlstr.lm_trust_region),
     ("LM-QR-Recursive", nonlinearlstr.lm_trust_region),
+    ("LM-EVD", nonlinearlstr.lm_trust_region),
 ]
 
 # 3. Run benchmark
 println("Running benchmark on $(length(nls_problems)) problems...")
+
+prob = create_nls_functions(eval(nls_problems[1])())
+
+resi = prob.residual_func
+jac = prob.jacobian_func
+x0 = prob.x0
+nonlinearlstr.lm_trust_region(resi, jac, x0, nonlinearlstr.QRSolve())
+
 nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 400)
 
 # 4. Analyze results

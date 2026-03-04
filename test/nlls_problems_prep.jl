@@ -245,7 +245,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             "LM-QR-Recursive",
             "LM-QR-Recursive-Scaled",
             "LM-QR-Scaled",
-            "LM-EVD"
+            "LM-VCChol"
         ]
             # Use residual-Jacobian interface
             if contains(solver_name, "scaled") || contains(solver_name, "Scaled")
@@ -260,13 +260,14 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             elseif  contains(solver_name, "SVD")
                 subproblem_strategy = nonlinearlstr.SVDSolve()
             else #EVDsolve
-                subproblem_strategy = nonlinearlstr.EVDSolve()
+                subproblem_strategy = nonlinearlstr.QRCholStrategy()
             end
 
             result = solver_func(
-                prob_data.residual_func,
-                prob_data.jacobian_func,
+                prob_data.residual_func!,
+                prob_data.jacobian_func!,
                 prob_data.x0,
+                prob_data.n,
                 subproblem_strategy,
                 scaling_strategy;
                 max_iter = max_iter,
@@ -275,9 +276,10 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             #run one more time for timing:
 
             t = @elapsed solver_func(
-                prob_data.residual_func,
-                prob_data.jacobian_func,
+                prob_data.residual_func!,
+                prob_data.jacobian_func!,
                 prob_data.x0,
+                prob_data.n,
                 subproblem_strategy,
                 scaling_strategy;
                 max_iter = max_iter,

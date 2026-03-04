@@ -40,3 +40,8 @@ function scaling(::ColemanandLiScaling, J; x, lb, ub, g, τ = 1e-12)
     Jᵥ = Diagonal(g) * Diagonal(jᵥ)
     return D, Jᵥ, v
 end
+
+
+function scaling!(D::AbstractMatrix, scaling_strat::NoScaling; kwargs...)
+    @inbounds [D[i,i] = one(eltype(D)) for i in size(D,1)]
+end

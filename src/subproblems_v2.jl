@@ -1,6 +1,5 @@
 
 function solve_subproblem(
-    strategy::QRSolve,
     J::AbstractMatrix{T},
     f::AbstractVector{T},
     Δ::Real,
@@ -56,7 +55,6 @@ end
 
 
 function solve_subproblem(
-    strategy::LQSolve,
     J::AbstractMatrix{T},
     f::AbstractVector{T},
     Δ::Real,

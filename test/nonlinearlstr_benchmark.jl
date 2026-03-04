@@ -3,27 +3,35 @@ using DataFrames
 using nonlinearlstr
 using Test
 using CairoMakie
+using BenchmarkTools
 
 # 1. Find problems
-nls_problems = find_nlls_problems(50) # Benchmark on all available NLS problems
+nls_problems = find_nlls_problems(1000) # Benchmark on all available NLS problems
 
 # 2. Define solvers
 solvers = [
-    ("LM-SVD", nonlinearlstr.lm_trust_region),
-    ("LM-QR", nonlinearlstr.lm_trust_region),
-    ("LM-QR-Recursive", nonlinearlstr.lm_trust_region),
-    ("LM-EVD", nonlinearlstr.lm_trust_region),
+    ("LM-SVD", nonlinearlstr.lm_trust_region!),
+    ("LM-QR", nonlinearlstr.lm_trust_region!),
+    ("LM-QR-Recursive", nonlinearlstr.lm_trust_region!),
+    ("LM-VCChol", nonlinearlstr.lm_trust_region_v2!),
 ]
 
 # 3. Run benchmark
 println("Running benchmark on $(length(nls_problems)) problems...")
 
-prob = create_nls_functions(eval(nls_problems[1])())
-
-resi = prob.residual_func
-jac = prob.jacobian_func
+prob = create_nls_functions(eval(nls_problems[17])())
+prob_data = prob
+res! = prob.residual_func!
+jac! = prob.jacobian_func!
 x0 = prob.x0
-nonlinearlstr.lm_trust_region(resi, jac, x0, nonlinearlstr.QRSolve())
+nonlinearlstr.lm_trust_region!(res!, jac!, x0, prob.n, nonlinearlstr.QRSolve())
+nonlinearlstr.lm_trust_region_v2!(res!, jac!, x0, prob.n,
+ nonlinearlstr.QRCholStrategy(), nonlinearlstr.NoScaling();
+ max_iter = 400, gtol = 1e-6)
+
+@benchmark nonlinearlstr.lm_trust_region!($res!, $jac!, $x0, $prob.n, $nonlinearlstr.QRSolve())
+@benchmark nonlinearlstr.lm_trust_region_v2!($res!, $jac!, $x0, $prob.n)
+
 
 nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 400)
 

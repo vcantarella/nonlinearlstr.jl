@@ -1,5 +1,5 @@
 using Test
-using BenchmarkTools
+using Chairmarks
 using LinearAlgebra
 using nonlinearlstr
 using StaticArrays
@@ -42,7 +42,7 @@ using StaticArrays
         cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
 
         # 2. Test solve_subproblem allocations
-        allocs = @ballocated nonlinearlstr.solve_subproblem($strat, $J, $f, $radius, $cache)
+        allocs = minimum(@be nonlinearlstr.solve_subproblem($strat, $J, $f, $radius, $cache)).bytes
 
         println("  solve_subproblem allocations: $allocs bytes")
     end
@@ -86,7 +86,7 @@ end
         cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
 
         # 2. Test solve_subproblem allocations find_λ_scaled(strategy, cache, radius, J, Dk, f, 200, 1e-6)
-        allocs = @ballocated nonlinearlstr.find_λ_scaled(
+        allocs = minimum(@be nonlinearlstr.find_λ_scaled(
             $strat,
             $cache,
             $radius,
@@ -95,7 +95,7 @@ end
             $f,
             200,
             1e-6,
-        )
+        )).bytes
 
         println("  solve_subproblem allocations: $allocs bytes")
     end

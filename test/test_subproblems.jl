@@ -3,7 +3,6 @@ using LinearAlgebra
 using Statistics
 using Random
 using ForwardDiff
-using BenchmarkTools
 using Revise
 using nonlinearlstr
 

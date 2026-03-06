@@ -3,7 +3,7 @@ using DataFrames
 using nonlinearlstr
 using Test
 using CairoMakie
-using BenchmarkTools
+using Chairmarks
 
 # 1. Find problems
 nls_problems = find_nlls_problems(1000) # Benchmark on all available NLS problems
@@ -29,8 +29,8 @@ nonlinearlstr.lm_trust_region_v2!(res!, jac!, x0, prob.n,
  nonlinearlstr.QRCholStrategy(), nonlinearlstr.NoScaling();
  max_iter = 400, gtol = 1e-6)
 
-@benchmark nonlinearlstr.lm_trust_region!($res!, $jac!, $x0, $prob.n, $nonlinearlstr.QRSolve())
-@benchmark nonlinearlstr.lm_trust_region_v2!($res!, $jac!, $x0, $prob.n)
+println(@be nonlinearlstr.lm_trust_region!($res!, $jac!, $x0, $prob.n, $nonlinearlstr.QRSolve()))
+println(@be nonlinearlstr.lm_trust_region_v2!($res!, $jac!, $x0, $prob.n))
 
 
 nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 400)

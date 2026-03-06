@@ -11,9 +11,9 @@ nls_problems = find_nlls_problems(999)
 
 solvers = [
     # nonlinearlstr solvers (keep all)
-    ("LM-QR", nonlinearlstr.lm_trust_region),
-    ("LM-SVD", nonlinearlstr.lm_trust_region),
-    ("LM-QR-Recursive", nonlinearlstr.lm_trust_region),
+    ("LM-QR", nonlinearlstr.lm_trust_region!),
+    ("LM-SVD", nonlinearlstr.lm_trust_region!),
+    ("LM-QR-Recursive", nonlinearlstr.lm_trust_region!),
 
     # PRIMA (Best: NEWUOA for unconstrained)
     ("PRIMA-NEWUOA", nothing),

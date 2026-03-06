@@ -11,7 +11,7 @@ using LeastSquaresOptim
 using LinearAlgebra, Statistics
 using NLLSsolver
 using StaticArrays
-using BenchmarkTools
+using Chairmarks
 using CondaPkg
 using PythonCall
 using StaticArrays
@@ -275,7 +275,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             )
             #run one more time for timing:
 
-            t = @elapsed solver_func(
+            t = minimum(@be solver_func(
                 prob_data.residual_func!,
                 prob_data.jacobian_func!,
                 prob_data.x0,
@@ -284,7 +284,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 scaling_strategy;
                 max_iter = max_iter,
                 gtol = 1e-6,
-            )
+            )).time
 
             x_opt, r_opt, g_opt, iterations = result
             final_cost = 0.5 * dot(r_opt, r_opt)
@@ -303,7 +303,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             )
             #run one more time for timing:
 
-            t = @elapsed solver_func(
+            t = minimum(@be solver_func(
                 prob_data.residual_func,
                 prob_data.jacobian_func,
                 prob_data.x0;
@@ -311,7 +311,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 ub = prob_data.bu,
                 max_iter = max_iter,
                 gtol = 1e-6,
-            )
+            )).time
 
             x_opt, r_opt, g_opt, iterations = result
             final_cost = 0.5 * dot(r_opt, r_opt)
@@ -321,17 +321,19 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             if solver_name == "PRIMA-NEWUOA"
                 # because PRIMA counts function evaluations we count an iteration as running the
                 #function model n times. I am evaluating time here once because they are the ones that take the longer.
-                start_time = time()
                 result = PRIMA.newuoa(
                     prob_data.obj_func,
                     prob_data.x0;
                     maxfun = max_iter*prob_data.m,
                 )
-                t = time() - start_time
+                t = minimum(@be PRIMA.newuoa(
+                    prob_data.obj_func,
+                    prob_data.x0;
+                    maxfun = max_iter*prob_data.m,
+                )).time
             else
                 lb = prob_data.bl
                 ub = prob_data.bu
-                start_time = time()
                 result = PRIMA.bobyqa(
                     prob_data.obj_func,
                     prob_data.x0;
@@ -339,7 +341,13 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     xu = ub,
                     maxfun = max_iter*prob_data.m,
                 )
-                t = time() - start_time
+                t = minimum(@be PRIMA.bobyqa(
+                    prob_data.obj_func,
+                    prob_data.x0;
+                    xl = lb,
+                    xu = ub,
+                    maxfun = max_iter*prob_data.m,
+                )).time
             end
             x_opt = result[1]
             final_cost = prob_data.obj_func(x_opt)
@@ -360,7 +368,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 prob_nl = NonlinearLeastSquaresProblem(nl_func, copy(prob_data.x0))
             end
             sol = solve(prob_nl, solver_func(); maxiters = max_iter)
-            t = @elapsed solve(prob_nl, solver_func(); maxiters = max_iter)
+            t = minimum(@be solve(prob_nl, solver_func(); maxiters = max_iter)).time
             x_opt = sol.u
             final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)
@@ -380,7 +388,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             #     converged = SciMLBase.successful_retcode(sol)
         elseif contains(solver_name, "JSO-")
             stats = solver_func(prob, max_iter = max_iter)
-            t = @elapsed solver_func(prob, max_iter = max_iter)
+            t = minimum(@be solver_func(prob, max_iter = max_iter)).time
             x_opt = stats.solution
             final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)
@@ -398,7 +406,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 lower = prob_data.bl,
                 upper = prob_data.bu,
             )
-            t = @elapsed LeastSquaresOptim.optimize!(
+            t = minimum(@be LeastSquaresOptim.optimize!(
                 LeastSquaresProblem(
                     x = copy(prob_data.x0),
                     f! = prob_data.residual_func!,
@@ -408,7 +416,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 solver_func,
                 lower = prob_data.bl,
                 upper = prob_data.bu,
-            )
+            )).time
             x_opt = res.minimizer
             iterations = res.iterations
             converged = res.converged
@@ -425,7 +433,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 max_nfev = 1000,
                 verbose = 0,
             )
-            t = @elapsed scipy.optimize.least_squares(
+            t = minimum(@be scipy.optimize.least_squares(
                 prob_data.residual_func,
                 copy(prob_data.x0),
                 jac = prob_data.jacobian_func,
@@ -434,7 +442,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 gtol = 1e-6,
                 max_nfev = 1000,
                 verbose = 0,
-            )
+            )).time
             x_opt = pyconvert(Vector{Float64}, pyresult["x"])
             final_cost =
                 0.5 * dot(prob_data.residual_func(x_opt), prob_data.residual_func(x_opt))
@@ -455,7 +463,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 max_nfev = 1000,
                 verbose = 0,
             )
-            t = @elapsed scipy.optimize.least_squares(
+            t = minimum(@be scipy.optimize.least_squares(
                 prob_data.residual_func,
                 copy(prob_data.x0),
                 jac = prob_data.jacobian_func,
@@ -464,7 +472,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 gtol = 1e-6,
                 max_nfev = 1000,
                 verbose = 0,
-            )
+            )).time
             x_opt = pyconvert(Vector{Float64}, pyresult["x"])
             final_cost =
                 0.5 * dot(prob_data.residual_func(x_opt), prob_data.residual_func(x_opt))
@@ -515,7 +523,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 maxiters = max_iter,
             )
 
-            t = @elapsed NLLSsolver.optimize!(problem, options)
+            t = minimum(@be NLLSsolver.optimize!(problem, options)).time
             
             x_opt = collect(problem.variables[1])
             final_cost = prob_data.obj_func(x_opt)
@@ -554,10 +562,10 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             )
             
             # Run again for timing
-            t = @elapsed LsqFit.curve_fit(
+            t = minimum(@be LsqFit.curve_fit(
                 model, jac_model, xdata, ydata, copy(prob_data.x0); 
                 lower = prob_data.bl, upper = prob_data.bu, maxIter = max_iter, g_tol = 1e-6
-            )
+            )).time
             
             x_opt = fit.param
             

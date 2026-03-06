@@ -7,7 +7,6 @@ using LeastSquaresOptim
 using ForwardDiff
 using LinearAlgebra, Statistics
 using nonlinearlstr
-using BenchmarkTools
 using PythonCall
 scipy_opt = pyimport("scipy.optimize")
 using LinearAlgebra
